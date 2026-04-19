@@ -266,6 +266,117 @@ Rendered output (HTML, OSCAL, CLI) always visually distinguishes them.
 
 ---
 
+## 2026-04-19 — Pre-hackathon stack verification on Python 3.12 `[process]` `[tool-choice]`
+
+**Decision:** Dep versions resolved by `uv sync` against the current `pyproject.toml` are the pre-hackathon baseline. `uv.lock` is committed.
+
+**Verified today (Python 3.12.3, uv 0.8.17):**
+
+- `uv sync` resolves cleanly. Key runtime versions: compliance-trestle 3.12.0, mcp 1.27.0, anthropic 0.96.0, pydantic 2.13.2, typer 0.24.1, python-hcl2 5.1.1, jinja2 3.1.6. All import without error.
+- `scripts/trestle_smoke.py` loads the vendored NIST SP 800-53 Rev 5.2.0 catalog via `trestle.oscal.catalog.Catalog.oscal_read`. Walks the group tree correctly: 20 families, 324 top-level controls, 1,196 including enhancements. Each of the six hackathon target families (SC, IA, AU, CP, and the ones SC-8/SC-13 sit under) resolves.
+- anthropic SDK 0.96.0 imports and instantiates. Model string `claude-opus-4-7` is structurally accepted by the SDK (no model-ID validation error).
+- Minor observation for the hackathon loader primitive: trestle exposes `metadata.oscal_version` as a Pydantic `RootModel`, so a naive `print(md.oscal_version)` yields `__root__='1.1.3'` rather than the string. The internal `Control` / `Profile` mapper should unwrap via `.root`.
+
+**Not verified today (requires user's terminal):**
+
+- Live authenticated call to the Anthropic API with `claude-opus-4-7`. The sandbox session that ran the other smoke tests does not expose an `ANTHROPIC_API_KEY` to subprocesses. The smoke script completed the SDK wiring and failed cleanly on missing credentials, which is the correct behavior but does not confirm the hackathon API key works or that `claude-opus-4-7` is available on that key's plan.
+
+**Action for the user before Day 1:** run the one-liner below on a shell that has `ANTHROPIC_API_KEY` set. Expected output is a short response containing "smoke ok" and no error. If `claude-opus-4-7` is rejected by the API (e.g. the key lacks plan access), fall back per the existing DECISIONS entry on model selection and note it here.
+
+```bash
+uv run python -c "from anthropic import Anthropic; r = Anthropic().messages.create(model='claude-opus-4-7', max_tokens=32, messages=[{'role':'user','content':'Reply with exactly: smoke ok'}]); print(r.model, '|', r.content[0].text)"
+```
+
+**Rationale for recording this rather than skipping:** honesty about what was verified and what wasn't keeps the pre-hackathon checklist credible. A green check we didn't actually earn would be worse than an open item.
+
+---
+
+## 2026-04-19 — FedRAMP Moderate OSCAL baseline source is blocked; options under review `[scope]` `[architecture]`
+
+**Decision:** No decision yet. Logging the block so the next session's first action is settling this.
+
+**Situation:** `CLAUDE.md`, `README.md`, `docs/dual_horizon_plan.md`, and `CONTRIBUTING.md` all reference `GSA/fedramp-automation` (path `dist/content/rev5/baselines/json/FedRAMP_rev5_MODERATE-baseline_profile.json`) as the source for the FedRAMP Moderate OSCAL profile. Pre-hackathon verification today found that URL returns 404 from both `github.com` and `raw.githubusercontent.com`. Public reporting indicates the repo was archived in mid-2025 and a subsequent release removed the OSCAL baseline content as FedRAMP transitioned toward the FedRAMP Machine-Readable (FRMR) format under the FedRAMP 20x initiative. `FedRAMP/docs` (live) now hosts FRMR documentation; it does not contain OSCAL baselines. `usnistgov/oscal-content` has the 800-53 catalog but no FedRAMP-specific profile at any path probed.
+
+**What we did land today:** vendored the NIST SP 800-53 Rev 5 catalog into `catalogs/nist/`. A FedRAMP Moderate profile, however we obtain it, must resolve against this catalog, so vendoring it does not prejudice the choice below.
+
+**Options under consideration (not ranked yet; needs human call):**
+
+- **A. Pin to the last good pre-archive commit of `GSA/fedramp-automation`.** Recover the baseline from a historical tag or Wayback Machine, record the deprecation context in `catalogs/README.md`, and vendor that. Pros: minimal change to plan; one-time effort. Cons: we ship stale content relative to FedRAMP's current direction; updates are manual.
+- **B. Construct the FedRAMP Moderate profile ourselves from published control lists.** The control selections are public. A hand-rolled OSCAL profile referencing the vendored 800-53 catalog is straightforward. Pros: full control over provenance; no dependency on a vanishing upstream. Cons: we take ownership of a thing FedRAMP used to publish; maintenance burden.
+- **C. Treat FRMR as the primary FedRAMP-source input and emit OSCAL only at the output boundary.** Bigger architectural shift. Pros: aligns with where FedRAMP is actually going; differentiated positioning. Cons: out of scope for the hackathon; FRMR is a moving target and tool support is thin.
+- **D. Defer the FedRAMP-specific profile; ship v0 against the NIST 800-53 baseline directly, profile-less.** Pros: unblocks the hackathon immediately; every detector already declares the controls it evidences. Cons: loses the "FedRAMP Moderate" framing of the demo.
+
+**Pointers for whoever decides:** `COMPETITIVE_LANDSCAPE.md` still positions Efterlev as FedRAMP-focused, so option D weakens the pitch. `README.md`'s coverage table is per-control, not per-profile, so it doesn't need to change under any option. `LIMITATIONS.md` does not mention the profile source and so is unaffected.
+
+---
+
+## 2026-04-19 — MCP stdio transport verified with FastMCP on mcp 1.27.0 `[architecture]` `[process]`
+
+**Decision:** FastMCP (`mcp.server.fastmcp.FastMCP`) is the minimum-viable server shape for v0. Stdio is the transport. Both are confirmed working on this Python 3.12 install.
+
+**Verified today (mcp 1.27.0):**
+
+- `scripts/mcp_smoke_server.py` registers two tools (`echo`, `add_two_numbers`) via the `@mcp.tool()` decorator and runs over stdio without configuration.
+- `scripts/mcp_smoke_client.py` spawns the server as a subprocess, initializes a `ClientSession`, enumerates tools, and invokes each one. Both calls return the correct result. Protocol version negotiated: `2025-11-25`.
+- Server init payload exposes `serverInfo.name="efterlev-smoke"` — this is how external Claude Code discovers the server's identity. The real `src/efterlev/mcp_server/` should follow the same pattern with `name="efterlev"`.
+
+**Not verified today (requires user):**
+
+- Second Claude Code session discovering and calling the smoke server live. The in-process client proves the transport; the live discovery is a separate trust claim (Claude Code's MCP client handles tool discovery, argument schema validation, and result rendering in ways our in-process client does not exercise). Instructions are in `scripts/README.md` under "Live Claude Code verification (manual)".
+
+**Rationale for FastMCP over the lower-level `mcp.server.Server`:** FastMCP's decorator pattern produces agent-legible tool schemas from Python type hints with zero boilerplate. That is exactly the shape we want for the real primitive registration — our primitive decorator can wrap `@mcp.tool()` and add provenance emission without rewriting the MCP plumbing.
+
+**Alternatives considered:**
+
+- **Lower-level `mcp.server.Server`:** more control, more boilerplate, no clear advantage for our use case. Reconsider only if FastMCP's schema generation doesn't play well with our Pydantic input/output models (we'll find out Day 2).
+
+---
+
+## 2026-04-19 — Pivot to KSI-native, FRMR-first; OSCAL demoted to v1 output `[architecture]` `[scope]` `[positioning]`
+
+**Decision:** Efterlev's primary internal abstraction is the FedRAMP 20x **Key Security Indicator (KSI)**, not the 800-53 control. Its primary output format is **FRMR-compatible JSON** (from `FedRAMP/docs`), not OSCAL. NIST 800-53 Rev 5 remains the underlying catalog — each KSI references 800-53 controls, and detectors still evidence those controls — but the user-facing surface and the primary output both speak KSIs and FRMR. OSCAL output generation is demoted to a v1 secondary format for users transitioning Rev5 submissions and for downstream OSCAL-Hub-style consumers.
+
+**This entry explicitly reverses the 2026-04-18 decision "OSCAL as output, not internal model."** The OSCAL-as-first-class-output framing no longer matches where FedRAMP is going or where our ICP is landing. The internal-model-vs-output-boundary discipline from that earlier entry is preserved and stays correct; what changes is *which* output format is primary.
+
+**Rationale:**
+
+1. **FedRAMP itself is moving.** Phase 1 of FedRAMP 20x completed in late 2025 with 13 Low authorizations; Phase 2 Moderate pilot is underway and Phase 2 entered pilot in November 2025 with an initial end date of 2026-03-31. In 2025 FedRAMP processed 100+ Rev5 authorizations with zero OSCAL-structured submissions, and no 20x Phase 1 participant used OSCAL to structure required machine-readable materials. FRMR (FedRAMP Machine-Readable) is the format FedRAMP 20x is shipping, and it is actively maintained at `FedRAMP/docs`. Betting the internal model and primary output on OSCAL was betting on a pace of adoption that the field has not produced. Betting on KSIs + FRMR aligns with what FedRAMP's own authorization pipeline now accepts.
+
+2. **Architectural alignment.** Our thesis — "evidence over narrative, outcomes over process, deterministic scanner output primary, LLM reasoning secondary" — maps to KSIs directly. KSIs are explicitly outcome-based measurable indicators ("Encrypt or otherwise secure network traffic"; "Enforce multi-factor authentication using methods that are difficult to intercept or impersonate"). OSCAL's SSP narrative model asks for process and implementation descriptions, which are a less-good fit for what a code scanner can honestly produce. FRMR attestations ("here is the evidence that this outcome is achieved, citing Terraform line X") are exactly what we generate; SSP narratives ("here is how we implement the control") are not.
+
+3. **ICP alignment.** Our ICP is a SaaS company (50–200 engineers) starting its first FedRAMP effort in 2026 with a committed federal deal on the line. A new-in-2026 authorization targets 20x, which is KSI-native. Serving this user well means speaking KSIs in the CLI, the agent output, and the report — not speaking 800-53 control numbers and OSCAL. The primary ICP entry at `docs/icp.md` supports this directly: their day-one experience improves when it lands in the language FedRAMP 20x is actually asking them for.
+
+4. **Market positioning.** No OSS tool is KSI-native today. Comp AI is not; their FedRAMP coverage (41% in their own demo) is Rev5-era, not 20x. RegScale OSCAL Hub is deep-OSCAL and has real architectural debt to work through on FRMR. Being KSI-native from day one is a differentiator that is currently unclaimed. The "dev-tool-shaped positioning nobody else is occupying" argument in `COMPETITIVE_LANDSCAPE.md` is now sharpened by "KSI-native positioning nobody else is occupying *yet*."
+
+5. **Engineering simplicity.** FRMR is a single JSON file with a published JSON Schema (`FedRAMP.schema.json`, draft 2020-12). Pydantic reads it directly — no specialized library needed, no complex profile/catalog/SSP model hierarchy to wrestle with. The hackathon saves engineering effort that would otherwise have gone into OSCAL generator-primitive plumbing and spends it on the detector library instead, which is the moat. Adding OSCAL generators in v1 is additive (one more generator primitive) rather than rearchitectural (the internal model is format-agnostic by design).
+
+6. **Honest claims.** "We evidence KSI-SVC-SNT via Terraform detection of TLS configuration on ALB listeners" is a more honest claim than "we evidence SC-8, whose full implementation includes procedural aspects we cannot see from code." KSIs are designed around outcomes we can actually detect. This tightens the evidence-vs-claim discipline at the contract level rather than only in documentation.
+
+**Alternatives considered:**
+
+- **Stay OSCAL-primary and attempt to recover the archived FedRAMP OSCAL profile.** Rejected. `GSA/fedramp-automation` was archived mid-2025 and its OSCAL baselines removed as FedRAMP transitioned to FRMR. Recovering from Wayback Machine or a pre-archive tag is possible but ships stale content that FedRAMP no longer maintains, and the positioning ("we produce OSCAL primarily") bets against where FedRAMP is going. The previous DECISIONS entry ("FedRAMP Moderate OSCAL baseline source is blocked; options under review") listed this as option A; we are rejecting it here.
+- **Drop OSCAL entirely.** Rejected. RFC-0024 establishes a September 2026 machine-readable compliance floor for Rev5 submissions, and tools like OSCAL Hub (donated to the OSCAL Foundation in late 2025) exist and serve a real constituency. Users mid-Rev5-transition need OSCAL output; cutting it entirely forecloses that user. OSCAL lands in v1 as a secondary output for those users.
+- **Support both FRMR and OSCAL equally at v0.** Rejected. "Primary format" is a strategy choice, not a feature list. Supporting both equally produces a tool with no clear positioning, double the Day 2–3 generator engineering, and muddled messaging. Primary means primary; we pick.
+- **Treat FRMR as input only (consume KSI definitions) and keep OSCAL as primary output.** Considered briefly. Rejected because it inverts the positioning mismatch: we would produce OSCAL artifacts that map back to KSIs we derived from FRMR — which is more work than generating FRMR directly and lands in a format FedRAMP 20x reviewers are not asking for.
+
+**Known open item (flagged on the pivot, not resolved by it):** FRMR 0.9.43-beta does not list SC-28 (encryption at rest) in any KSI's `controls` array, and no indicator `statement` references "at rest." Our encryption-at-rest detector area therefore has `[TBD]` in the KSI column of `CLAUDE.md` and `README.md` with KSI-SVC-VRI (Validating Resource Integrity, SVC theme) marked as the nearest thematic fit. Day 1 resolves this: either accept KSI-SVC-VRI with an honest docstring caveat, reframe the detector around integrity, or open an issue on `FedRAMP/docs` for a missing KSI. Do not invent a KSI.
+
+**What did not change (so this entry's scope is clear):**
+- Primitive / detector / agent three-way architecture separation
+- Evidence-vs-Claim discipline in the data model
+- Provenance model (append-only, content-addressed, versioned)
+- MCP as the agent-exposed interface; FastMCP as the server shape
+- Claude Code / Anthropic direct API at v0; AWS Bedrock as v1 second backend
+- Apache 2.0 license, governance model, contribution posture
+- Primary ICP (first-FedRAMP SaaS, 50–200 engineers); ICPs B and C as secondary
+- Six hackathon detection areas (their KSI mappings are added; the detection areas themselves are the same six)
+- Terraform/OpenTofu as v0 input source; AWS as v0 cloud
+- 4-day demo flow structure and the meta-loop demo moment
+- govnotes as the demo target
+- CMMC 2.0 as v1 second framework; DoD IL as v1.5+
+
+---
+
 
 
 ```
