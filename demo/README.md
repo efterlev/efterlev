@@ -1,10 +1,17 @@
 # demo/
 
-This directory will hold `govnotes`, a synthetic gov-adjacent SaaS used as the demo target for
+This directory contains `govnotes`, a synthetic gov-adjacent SaaS used as the demo target for
 Efterlev's scanners and agents.
 
-`govnotes` is being developed in a separate repository. Once that upstream repo is initialized,
-it will be added here as a git submodule pinned to a specific commit. Until then, this
-directory is intentionally empty (`.gitkeep` placeholder only).
+`govnotes` is pinned here as a git submodule pointing at
+[`lhassa8/govnotes-demo`](https://github.com/lhassa8/govnotes-demo), locked to a specific
+known-good commit. To populate it on a fresh clone:
 
-See `docs/dual_horizon_plan.md` §2.2 for what `govnotes` contains and why.
+```bash
+git submodule update --init demo/govnotes
+```
+
+See [`docs/dual_horizon_plan.md`](../docs/dual_horizon_plan.md) §2.2 for what `govnotes`
+contains and why — deliberate compliance gaps the Gap Agent flags, ambiguous cases a
+reviewer has to disambiguate, and the good-neighbor pattern the detectors should avoid
+false-flagging.
