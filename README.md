@@ -312,6 +312,8 @@ Built on [compliance-trestle](https://github.com/IBM/compliance-trestle) for OSC
 - [docs/icp.md](./docs/icp.md) — the Ideal Customer Profile: who Efterlev is for, how we decide what to build
 - [docs/dual_horizon_plan.md](./docs/dual_horizon_plan.md) — full plan and roadmap
 - [docs/architecture.md](./docs/architecture.md) — deeper architectural detail
+- [docs/scope.md](./docs/scope.md) — v0 MVP scope contract
+- [docs/day1_brief.md](./docs/day1_brief.md) — quick-reference for Day 1 of the hackathon
 - [LIMITATIONS.md](./LIMITATIONS.md) — what Efterlev does and doesn't do
 - [THREAT_MODEL.md](./THREAT_MODEL.md) — security posture
 - [COMPETITIVE_LANDSCAPE.md](./COMPETITIVE_LANDSCAPE.md) — honest positioning against Comp AI, RegScale OSCAL Hub, and others

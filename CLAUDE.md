@@ -414,6 +414,7 @@ If a feature does not directly serve this flow or the architectural story behind
 - `docs/icp.md` — the Ideal Customer Profile; lens for every product decision
 - `docs/scope.md` — the MVP contract
 - `docs/architecture.md` — deeper architectural detail
+- `docs/day1_brief.md` — quick-reference for Day 1 of the hackathon (design calls, vertical slice, guardrails)
 - `DECISIONS.md` — running decision log
 - `LIMITATIONS.md` — honest scope of what the tool does and doesn't do
 - `THREAT_MODEL.md` — security posture for the tool itself
