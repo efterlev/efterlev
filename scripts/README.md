@@ -9,6 +9,12 @@ standalone via `uv run python scripts/<name>.py`.
 - `trestle_smoke.py` — loads the vendored NIST SP 800-53 Rev 5 catalog via
   `compliance-trestle` and prints metadata plus a recursive control count.
   Used once pre-hackathon to confirm the Python 3.12 install is clean.
+- `catalogs_crossref.py` — cross-references every 800-53 control ID cited
+  by any KSI in the vendored FRMR against the vendored NIST 800-53 catalog.
+  Run pre-hackathon to catch data-integrity bugs before the Day 1 loader
+  code hits them; intended as a repeatable harness against future FRMR /
+  catalog bumps. Exit 0 = clean, exit 1 = at least one cited ID doesn't
+  resolve.
 - `mcp_smoke_server.py` — minimal stdio MCP server exposing two trivial
   tools (`echo`, `add_two_numbers`) via FastMCP. Used pre-hackathon to
   verify the transport works on this install and, paired with a live
