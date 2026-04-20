@@ -377,6 +377,50 @@ uv run python -c "from anthropic import Anthropic; r = Anthropic().messages.crea
 
 ---
 
+## 2026-04-20 — External code-level review; incorporated fixes, deferred items, Day 1 design calls `[process]` `[architecture]`
+
+**Context.** An outside reviewer ran a full pass over the repository (feasibility, FedRAMP 20x landscape, architecture, AI usage, code state) and produced a detailed report. The review was accurate on the repo's state — documentation-complete and code-empty by design as a pre-hackathon scaffold — and surfaced a mix of config-level issues that could be fixed now, factual-accuracy issues in the docs, and design-level items that properly belong to Day 1 of the hackathon itself.
+
+**Verified wrong in the review (no action):**
+
+- **KSI count 60 vs 64.** Reviewer's regex over the FRMR JSON found 64 unique `KSI-XXX-YYY` patterns; docs claim 60 indicators. Verified empirically: `sum(len(d['KSI'][t]['indicators']) for t in themes)` = 60 across 11 themes. The extra 4 (`KSI-CSX-MAS`, `KSI-CSX-ORD`, `KSI-CSX-SUM`, `KSI-RSC-MON`) are cross-references in `FRR.KSI.data.20x.*` process content, not KSI indicator records. Docs are accurate.
+- **SECURITY.md "not filled in".** The file is populated with a disclosure process, scope, commitments, and a coordinated-disclosure SLA. Non-issue.
+
+**Incorporated into `main` in the preceding commit:**
+
+1. **Wheel packaging (C3).** `pyproject.toml` now ships `catalogs/` inside the installed package via `[tool.hatch.build.targets.wheel.force-include]`. `pipx install efterlev` now gets the vendored FRMR + NIST 800-53 content post-install. Verified with `uv build` + wheel inspection.
+2. **RFC-0024 staleness (M1).** `docs/architecture.md` §"OSCAL's role" and `DECISIONS.md` (2026-04-18 OSCAL entry, two places) were reframed around NOTICE-0009 (2026-03-25, softened the originally-proposed September 2026 effective date) and CR26 (Consolidated Rules for 2026, expected end of June 2026, valid through 2028-12-31). The v1 OSCAL-output justification still holds — Rev5 transition users need it on FedRAMP's CR26 timeline — but we no longer assert a hard deadline that FedRAMP has publicly softened.
+3. **Homepage URL casing (N3).** `pyproject.toml` `[project.urls]` now uses `lhassa8/Efterlev` consistently.
+4. **README pre-implementation framing (partial M2 + reviewer's overclaim concern).** Added a status blockquote under the lede naming the scaffold state, and rewrote the Project status section to honestly distinguish what exists today from what `v0.1` will be on completion of the 4-day build. Chose to keep `pyproject.toml` version at `0.0.1` (honest about pre-implementation state) and tag `v0.1` at end of build, rather than bump the version prematurely to match the README's aspirational label.
+
+**Deferred to Day 1 of the hackathon with reasoning:**
+
+The review's phased implementation plan (its §6) is useful input but does not replace `docs/dual_horizon_plan.md` §2.3 or `docs/scope.md`, which remain the authoritative plan and scope contract. The following items from the review are Day 1 implementation work, not pre-hackathon:
+
+- **C1, C2:** writing the `src/efterlev/*` code and the Typer CLI entry point. This is the hackathon.
+- **C4:** a submodule-integrity regression test. Trivial to add once the CLI's `init` exists; premature now.
+- **M5:** secret-redaction pipeline at the LLM-client chokepoint. Belongs in `src/efterlev/llm/__init__.py` once that module is written. The design commitment in THREAT_MODEL.md stands.
+- **M6:** agent evaluation harness (golden fixtures, structured-output snapshot comparison). Lands with the agent code itself in Phase 3 of the hackathon plan.
+- **M9:** `--catalogs <path>` override for v0. Implemented when the CLI `init` primitive lands.
+- **N2:** secret-scanner dependency (`detect-secrets` or vendored regex pack). Picked alongside the redaction pipeline in M5.
+- **N4:** SHA-256 verification of vendored catalogs at load time. Belongs in the FRMR/OSCAL loader primitives.
+- **N6:** forward-compatibility for FedRAMP's proposed "Low/Moderate/High" → "Class A/B/C/D" renaming. Handled by making the baseline-config schema label-agnostic; decided when the config module is written.
+- **N7:** pure-pip contributor path in CONTRIBUTING.md. Low priority; confirm when CI has real code to test.
+
+**Architectural design calls Day 1 must resolve (each worth its own DECISIONS entry):**
+
+These came out of the review and need explicit decisions, not just implementation. Naming them here so Day 1 can't miss them:
+
+1. **SC-28 unmapped-control representation (M4).** FRMR 0.9.43-beta has no KSI that lists SC-28. The current README / `CLAUDE.md` marks this `[TBD]` with KSI-SVC-VRI as "nearest thematic fit." The review correctly notes that's a fudge — VRI is integrity; SC-28 is confidentiality-at-rest. The right answer is likely a canonical `Evidence` shape that carries `controls_evidenced: ["SC-28"]` with `ksis_evidenced: []` and a rendering path that shows "evidenced at 800-53 level; no current KSI mapping." Day 1 decides. Do not invent a KSI.
+2. **Scanner-only FRMR skeleton path (M7).** The Documentation Agent currently requires an LLM call. For users in environments where the Anthropic API is not reachable (classified, early GovCloud, specific customer constraints), v0 should still be able to produce an evidence-only FRMR skeleton — every KSI row populated with the cited evidence records, every narrative field left null, and a top-level `mode: "scanner_only"` marker. Day 1 decides where this logic lives (deterministic primitive vs. agent branch).
+3. **Prompt-injection defense shape (M8).** Evidence records may contain free-text strings originally extracted from source (e.g., Terraform resource descriptions, module comments) that could include prompt-injection payloads. Agent prompts need to treat evidence as data, not instructions — XML-style fencing (`<evidence id="..."> ... </evidence>`) with the instruction body outside the fence is the expected pattern. Day 1 writes the prompts with this structure from the first draft.
+4. **MCP trust model (M10).** Every primitive is exposed to every connected MCP client; there is no per-tool access control. v0 stays stdio-only (no TCP listener) by default, logs every tool call to the provenance store with a client-identifier field, and `THREAT_MODEL.md` gets an MCP-attack-surface section. Day 1 wires the server with these in place.
+5. **Provenance receipt log (M11).** Content-addressed storage detects tampering within the local graph but does not defend against a user or local adversary rewriting the SQLite DB. v0 ships a single append-only file-based receipt log (one line per new record, format TBD but "ts|record_id|record_type|parent_ids_hash" is the expected shape). Full cosign-style signing remains v1. Day 1 decides the receipt format and commits the decision here.
+
+**Review report itself:** not committed to the repo. Once v0 code lands, the review becomes stale as a state assessment; its value is front-loaded to the Day 1 planning session. The actionable items above preserve that value without carrying a time-stamped external artifact forward.
+
+---
+
 
 
 ```
