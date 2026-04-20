@@ -35,7 +35,10 @@ dependencies = [
     "pydantic>=2.6,<3",
     "typer>=0.12,<1",
     "python-hcl2>=4.3,<6",
-    "compliance-trestle>=3.5,<4",
+    # Trestle 4.x relaxes the hard cryptography==46.0.5 pin that locked us out of
+    # the CVE-2026-34073 / CVE-2026-39892 fixes (4.0.2 requires cryptography>=46.0.7).
+    # No code depends on trestle yet, so the major bump is free at pre-implementation.
+    "compliance-trestle>=4.0.2,<5",
     "anthropic>=0.40,<1",
     "mcp>=1.0,<2",
     "jinja2>=3.1,<4",
@@ -43,7 +46,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8,<9",
+    # CVE constraint: CVE-2025-71176 fix landed in pytest 9.0.3; tests/test_smoke.py
+    # was written to handle pytest 9's "exit 5 on no tests" behavior, so bumping is safe.
+    "pytest>=9.0.3,<10",
     "ruff>=0.6,<1",
     "mypy>=1.11,<2",
 ]
