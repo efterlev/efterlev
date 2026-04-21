@@ -170,9 +170,71 @@ def scan(
 
 
 @agent_app.command("gap")
-def agent_gap() -> None:
+def agent_gap(
+    target: Path = typer.Option(
+        Path("."),
+        "--target",
+        help="Path to the repo whose `.efterlev/` store will be read. Defaults to cwd.",
+    ),
+) -> None:
     """Classify each KSI as implemented / partial / not implemented / NA."""
-    _stub("3", "agent gap")
+    from efterlev.agents import GapAgent, GapAgentInput
+    from efterlev.errors import AgentError
+    from efterlev.frmr.loader import FrmrDocument
+    from efterlev.models import Evidence
+    from efterlev.provenance import ProvenanceStore, active_store
+
+    root = target.resolve()
+    if not (root / ".efterlev").is_dir():
+        typer.echo(
+            f"error: no `.efterlev/` directory under {root}. Run `efterlev init` first.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    frmr_cache = root / ".efterlev" / "cache" / "frmr_document.json"
+    if not frmr_cache.is_file():
+        typer.echo(
+            f"error: FRMR cache missing at {frmr_cache}. Re-run `efterlev init`.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    frmr_doc = FrmrDocument.model_validate_json(frmr_cache.read_text(encoding="utf-8"))
+    indicators = list(frmr_doc.indicators.values())
+
+    try:
+        with ProvenanceStore(root) as store:
+            evidence = [Evidence.model_validate(p) for _rid, p in store.iter_evidence()]
+            if not evidence:
+                typer.echo(
+                    "error: no evidence records in the store. Run `efterlev scan` first.",
+                    err=True,
+                )
+                raise typer.Exit(code=1)
+
+            with active_store(store):
+                agent = GapAgent()
+                report = agent.run(GapAgentInput(indicators=indicators, evidence=evidence))
+    except AgentError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1) from e
+
+    typer.echo(f"Gap Agent classified {len(report.ksi_classifications)} KSI(s).")
+    for clf in report.ksi_classifications:
+        typer.echo(f"  {clf.ksi_id:<14}  {clf.status}")
+        typer.echo(f"                  {clf.rationale}")
+    if report.unmapped_findings:
+        typer.echo("")
+        typer.echo(f"Unmapped findings ({len(report.unmapped_findings)}):")
+        for um in report.unmapped_findings:
+            typer.echo(f"  {um.evidence_id}  controls={','.join(um.controls)}")
+            typer.echo(f"    {um.note}")
+    if report.claim_record_ids:
+        typer.echo("")
+        typer.echo("Claim record IDs (pass to `efterlev provenance show`):")
+        for cid in report.claim_record_ids:
+            typer.echo(f"  {cid}")
 
 
 @agent_app.command("document")

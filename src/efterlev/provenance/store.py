@@ -221,3 +221,37 @@ class ProvenanceStore:
             "SELECT record_id FROM provenance_records ORDER BY timestamp, record_id"
         ).fetchall()
         return [r[0] for r in rows]
+
+    def iter_evidence(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return `(record_id, evidence_payload)` for every detector-emitted record.
+
+        Filters on `record_type="evidence"` + payload that parses as an
+        Evidence model dump (checked structurally via required keys). Primitive
+        invocation records share record_type="evidence" when the primitive is
+        deterministic but have payload shape `{"input": ..., "output": ...}`,
+        so the structural filter cleanly separates them.
+
+        Returns a list because iteration order matters for deterministic
+        display and test assertions; the list size is bounded by the number
+        of detector hits, which at v0 is small.
+        """
+        rows = self._conn.execute(
+            "SELECT record_id, content_ref FROM provenance_records "
+            "WHERE record_type = 'evidence' ORDER BY timestamp, record_id"
+        ).fetchall()
+        results: list[tuple[str, dict[str, Any]]] = []
+        for record_id, content_ref in rows:
+            full = self.blob_dir / content_ref
+            if not full.exists():
+                continue
+            try:
+                payload = json.loads(full.read_bytes())
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            # Detector-emitted Evidence has these required fields; primitive
+            # invocation records have {"input","output"} instead.
+            if {"detector_id", "source_ref", "timestamp"} <= payload.keys():
+                results.append((record_id, payload))
+        return results
