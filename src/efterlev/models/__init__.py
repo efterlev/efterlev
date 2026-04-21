@@ -18,6 +18,7 @@ from efterlev.models.control import Control, ControlEnhancement
 from efterlev.models.evidence import Evidence
 from efterlev.models.indicator import Baseline, Indicator, Theme
 from efterlev.models.provenance import ProvenanceRecord, RecordType
+from efterlev.models.source import TerraformResource
 from efterlev.models.source_ref import SourceRef
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "ProvenanceRecord",
     "RecordType",
     "SourceRef",
+    "TerraformResource",
     "Theme",
 ]
