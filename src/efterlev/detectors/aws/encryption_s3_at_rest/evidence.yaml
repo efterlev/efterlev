@@ -1,0 +1,9 @@
+detector_id: aws.encryption_s3_at_rest
+
+evidence_shape:
+  resource_type: string        # "aws_s3_bucket" or "aws_s3_bucket_server_side_encryption_configuration"
+  resource_name: string        # the Terraform logical name
+  encryption_state: enum       # "present" | "absent"
+  location: enum?              # "inline" | "separate_resource"; omitted when absent
+  algorithm: string?           # "AES256" | "aws:kms" | etc.; omitted when not detectable
+  gap: string?                 # present only on negative evidence (encryption_state=absent)
