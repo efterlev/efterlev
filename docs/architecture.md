@@ -43,14 +43,16 @@ A detector declares both:
 ```python
 @detector(
     id="aws.encryption_s3_at_rest",
-    ksis=["KSI-SVC-VRI"],
+    ksis=[],  # DECISIONS 2026-04-21 design call #1: SC-28 has no FRMR KSI
     controls=["SC-28", "SC-28(1)"],
     source="terraform",
     version="0.1.0",
 )
 ```
 
-Its evidence records carry `ksis_evidenced` and `controls_evidenced` in parallel. Gap reports, attestation drafts, and HTML outputs all show the KSI as the primary organizing surface with the underlying controls shown alongside — because that is the distinction a user actually needs to see. An auditor wants to know both "is this KSI evidenced" and "which underlying 800-53 control has a mapped artifact." The data model answers both.
+Its evidence records carry `ksis_evidenced` and `controls_evidenced` in parallel. Gap reports, attestation drafts, and HTML outputs all show the KSI as the primary organizing surface with the underlying controls shown alongside — because that is the distinction a user actually needs to see. An auditor wants to know both "is this KSI evidenced" and "which underlying 800-53 control has a mapped artifact." The data model answers both. When a control evidenced by a detector has no FRMR KSI mapping (SC-28 today), the Gap Agent surfaces those records in an explicit "Unmapped findings" section rather than shoehorning them into a thematically-adjacent KSI.
+
+One subtlety on `ksis_evidenced`: per [DECISIONS 2026-04-21](../DECISIONS.md) — "Evidence.ksis_evidenced is default attribution, not authoritative" — the field represents the detector's *default* attribution, not the complete set of KSIs this evidence can inform. Agents may cite a given evidence record across additional KSIs through reasoning (e.g., a CloudTrail record attributed to KSI-MLA-LET also speaking to KSI-CMT-LMC's change-monitoring semantics). The Documentation Agent honors whatever evidence the Gap Agent cited; the fence-citation validator bounds this to "evidence the scanner actually produced."
 
 Two catalogs are vendored and loaded at startup:
 

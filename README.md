@@ -15,9 +15,9 @@ efterlev init --baseline fedramp-20x-moderate
 efterlev scan
 ```
 
-> **Status (April 2026): pre-implementation scaffold.** The repository's documentation, architecture, CI, and vendored FedRAMP FRMR + NIST 800-53 catalogs are in place; the Python implementation lands during a focused 4-day build. Until then, the sections below describe intended behavior, not shipped behavior. See [Project status](#project-status) for details.
+> **Status (April 2026): v0 shipped.** Six detectors, three agents (Gap, Documentation, Remediation), MCP stdio server, full provenance graph, HTML report rendering for every agent output, end-to-end CI demo running against a sample FedRAMP Terraform repo on GitHub Actions. Repository is currently private during hardening; the first public tag will land once install ergonomics and initial credentials are rotated. See [Project status](#project-status) for specifics of what's in and what's next.
 
-Efterlev is **KSI-native**: its primary abstraction is the Key Security Indicator from FedRAMP 20x, with 800-53 Rev 5 controls as the underlying reference. Its primary output is **FRMR-compatible JSON** (the format FedRAMP 20x is standardizing on). OSCAL output for users transitioning Rev5 submissions is on the v1 roadmap.
+Efterlev is **KSI-native**: its primary abstraction is the Key Security Indicator from FedRAMP 20x, with 800-53 Rev 5 controls as the underlying reference. Agent-drafted outputs (gap classifications, attestation narratives, remediation diffs) are emitted as self-contained HTML reports at v0; FRMR-compatible JSON serialization is a v1 deliverable — the internal model is already FRMR-shaped, it's the generator primitive that's next. OSCAL output for users transitioning Rev5 submissions is on the v1 roadmap alongside.
 
 Efterlev's current focus is SaaS companies pursuing their first FedRAMP Moderate authorization. Defense contractors pursuing CMMC 2.0 or DoD IL are a v1.5+ expansion; platform teams at larger gov-contractors are v2+. See [docs/icp.md](./docs/icp.md) for the full user profile and what that means for what Efterlev does and doesn't do.
 
@@ -112,11 +112,19 @@ That's it. No dashboard, no SaaS sign-up, no waiting on procurement. The whole f
 
 ### How AI is used
 
-We use Claude (currently `claude-opus-4-7`, with `claude-sonnet-4-6` as a fallback) for the parts where reasoning matters: classifying whether a control is implemented, drafting compliance narrative, proposing code changes. We do **not** use AI for the parts where determinism matters: the scanners, the schema validation, the provenance tracking.
+We use Claude for the parts where reasoning matters: classifying whether a control is implemented, drafting compliance narrative, proposing code changes. We do **not** use AI for the parts where determinism matters: the scanners, the schema validation, the provenance tracking.
 
-This split — **deterministic for evidence, AI for reasoning** — is the most important design decision in the project. It's what lets us tell auditors and 3PAOs the truth: scanner findings are verifiable facts about your code; AI claims are drafts you can audit but should not blindly trust.
+**Model selection is per-agent**, tuned to the shape of each agent's task:
 
-**Hallucination defenses are structural, not advisory.** Every AI-generated claim links explicitly to the evidence records it was reasoning over. The system rejects any AI output that cites evidence that doesn't actually exist. Every claim carries a "DRAFT — requires human review" marker that cannot be removed by a configuration flag. This is enforced at the type-system level, not by convention.
+- **Gap Agent** → `claude-opus-4-7`. Classification requires judgment calls on ambiguous evidence and the discipline to refuse to borrow evidence from unrelated KSIs. Cheaper models drift on the honesty posture.
+- **Documentation Agent** → `claude-sonnet-4-6`. Structured extractive writing against a strict format contract. Sonnet handles it at roughly 1/5 the cost per token with no quality delta observed in the reference CI runs. 60 narratives per full-baseline run: ~$1 on Sonnet versus ~$4-5 on Opus.
+- **Remediation Agent** → `claude-opus-4-7`. Generating syntactically valid Terraform diffs grounded in real source plus naming what the diff does NOT cover is code-generation plus architectural judgment. Opus-grade.
+
+See [DECISIONS.md](./DECISIONS.md) for the full rationale. Callers override per-call via the `model` arg on each agent; the framework is already built to swap in AWS Bedrock as a second backend in v1 without touching agent code.
+
+This split — **deterministic for evidence, AI for reasoning, different model weights for different cognitive loads** — is the most important design decision in the project. It's what lets us tell auditors and 3PAOs the truth: scanner findings are verifiable facts about your code; AI claims are drafts you can audit but should not blindly trust.
+
+**Hallucination defenses are structural, not advisory.** Every AI-generated claim links explicitly to the evidence records it was reasoning over via content-addressed IDs. Every agent prompt wraps evidence in `<evidence id="sha256:...">...</evidence>` XML fences; a post-generation validator rejects any output that cites evidence IDs not present as fences in the prompt the model actually saw (see [DECISIONS 2026-04-21 design call #3](./DECISIONS.md)). Every claim carries a "DRAFT — requires human review" marker that cannot be removed by a configuration flag — it's a `Literal[True]` at the type level, not a string. This is enforced at the type-system level, not by convention.
 
 ### Provenance is automatic and complete
 
@@ -144,6 +152,18 @@ pipx install efterlev
 
 Requires Python 3.12+. `uv` is used internally but not required for end users.
 
+While the repository is private (pre-public-tag), install from a cloned checkout or directly from git:
+
+```bash
+# from a checkout
+pip install -e .
+
+# or from git, using a fine-grained PAT with Contents:read on this repo
+pip install "git+https://x-access-token:${EFTERLEV_INSTALL_TOKEN}@github.com/lhassa8/Efterlev.git@main"
+```
+
+The govnotes-demo reference CI uses exactly this pattern — see [its workflow](https://github.com/lhassa8/govnotes-demo/blob/main/.github/workflows/efterlev-scan.yml) for a working install + scan + agent pipeline.
+
 ### Configure
 
 ```bash
@@ -169,31 +189,40 @@ Runs all applicable detectors against your Terraform and source. Produces findin
 efterlev agent gap
 ```
 
-The Gap Agent classifies each KSI as implemented, partially implemented, not implemented, or not applicable, given the evidence collected. Underlying 800-53 control status is shown alongside. Writes a human-readable HTML report to `out/gap_report.html`.
+The Gap Agent (Claude Opus 4.7) classifies each KSI as implemented, partial, not_implemented, or not_applicable, given the evidence collected. Underlying 800-53 control status is shown alongside. Requires `ANTHROPIC_API_KEY`. Writes a self-contained HTML report to `.efterlev/reports/gap-<timestamp>.html` and prints the per-KSI summary to the terminal. Every classification is persisted as a Claim record in the provenance store.
 
-### Draft FRMR attestation
+### Draft attestation narratives
 
 ```bash
-efterlev agent document --ksi KSI-SVC-VRI
+efterlev agent document                     # all classified KSIs
+efterlev agent document --ksi KSI-SVC-SNT   # one KSI
 ```
 
-The Documentation Agent drafts FRMR-compatible attestation JSON for a KSI, grounded in its evidence. Every assertion cites the evidence that supports it. Output is an HTML rendering alongside the FRMR JSON. OSCAL SSP narrative generation is a v1 roadmap item for users carrying Rev5 transition submissions.
+The Documentation Agent (Claude Sonnet 4.6 by default — see [DECISIONS.md](./DECISIONS.md) for the per-agent model-selection rationale) drafts an attestation narrative per classified KSI, grounded in the evidence the Gap Agent cited. Every narrative cites evidence by ID, names what the scanner proved and what it did not. Output is `.efterlev/reports/documentation-<timestamp>.html` with one card per KSI. Cost is typically ~$1-2 for a full baseline; at ~$0.02 per KSI narrative. FRMR-compatible JSON serialization is a v1 deliverable — the internal `AttestationDraft` model is already FRMR-shaped, it's the serializer that's next.
 
 ### Propose remediation
 
 ```bash
-efterlev agent remediate --ksi KSI-SVC-VRI
+efterlev agent remediate --ksi KSI-SVC-SNT
 ```
 
-The Remediation Agent proposes a code-level diff to address a gap. Review the diff, then apply it yourself or hand it to Claude Code.
+The Remediation Agent (Claude Opus 4.7) proposes a `git apply`-ready Terraform diff that closes the gap for one KSI, reading the `.tf` files the evidence referenced. Output is `.efterlev/reports/remediation-<ksi>-<timestamp>.html` with the diff in a monospace block, the explanation of what it changes and what it does NOT cover, and step-by-step "how to apply" guidance. Efterlev never modifies your code; a human reviews the diff and decides.
 
 ### Walk the provenance
 
 ```bash
-efterlev provenance show <claim_id>
+efterlev provenance show <record_id>
 ```
 
-Every generated claim traces back to the evidence that produced it and the source line that produced that. If the chain doesn't resolve, the claim is weak.
+Every generated claim traces back through the reasoning step, the evidence records cited, to the Terraform file and line that produced the evidence. Record IDs are printed by every command for exactly this purpose.
+
+### Run over MCP
+
+```bash
+efterlev mcp serve
+```
+
+Exposes every CLI verb as an MCP tool over stdio. Point Claude Code (or any MCP client) at it to drive scans, agent calls, and provenance walks from another AI session. Every tool call is logged as an `mcp_tool_call` Claim record in the target repo's provenance store; see [THREAT_MODEL.md](./THREAT_MODEL.md) T6 for the trust model.
 
 ---
 
@@ -209,18 +238,20 @@ If your FedRAMP boundary is Terraform-primary, Efterlev works for you today. If 
 
 KSIs below are from FRMR 0.9.43-beta (vendored at `catalogs/frmr/`). Each detection area evidences the listed KSI(s) and the 800-53 controls the KSI references.
 
-| Detection area | KSI (FRMR 0.9.43-beta) | 800-53 | Source |
+| Detector | KSI (FRMR 0.9.43-beta) | 800-53 | Resource types |
 |---|---|---|---|
-| Encryption at rest | `[TBD]` — see note below; closest fit is **KSI-SVC-VRI** (Validating Resource Integrity) | SC-28, SC-28(1) | Terraform/OpenTofu (S3, RDS, EBS) |
-| Transmission confidentiality | **KSI-SVC-SNT** (Securing Network Traffic) | SC-8 | Terraform/OpenTofu (ALB, TLS) |
-| Cryptographic protection | **KSI-SVC-VRI** (Validating Resource Integrity); reinforces KSI-SVC-SNT | SC-13 | Terraform/OpenTofu, source |
-| MFA enforcement | **KSI-IAM-MFA** (Enforcing Phishing-Resistant MFA) | IA-2 | Terraform/OpenTofu (IAM policy conditions) |
-| Event logging & audit generation | **KSI-MLA-LET** (Logging Event Types), **KSI-MLA-OSM** (Operating SIEM Capability) | AU-2, AU-12 | Terraform/OpenTofu (CloudTrail) |
-| System backup | **KSI-RPL-ABO** (Aligning Backups with Objectives) | CP-9 | Terraform/OpenTofu (RDS, S3 versioning) |
+| `aws.encryption_s3_at_rest` | (unmapped in FRMR — see note below) | SC-28, SC-28(1) | `aws_s3_bucket`, `aws_s3_bucket_server_side_encryption_configuration` |
+| `aws.tls_on_lb_listeners` | **KSI-SVC-SNT** (Securing Network Traffic) | SC-8 | `aws_lb_listener`, `aws_alb_listener` |
+| `aws.fips_ssl_policies_on_lb_listeners` | **KSI-SVC-VRI** (Validating Resource Integrity); reinforces KSI-SVC-SNT | SC-13 | `aws_lb_listener`, `aws_alb_listener` |
+| `aws.mfa_required_on_iam_policies` | **KSI-IAM-MFA** (Enforcing Phishing-Resistant MFA) | IA-2 | `aws_iam_{policy,role_policy,user_policy,group_policy}` |
+| `aws.cloudtrail_audit_logging` | **KSI-MLA-LET** (Logging Event Types), **KSI-MLA-OSM** (Operating SIEM Capability) | AU-2, AU-12 | `aws_cloudtrail` |
+| `aws.backup_retention_configured` | **KSI-RPL-ABO** (Aligning Backups with Objectives) | CP-9 | `aws_db_instance`, `aws_rds_cluster`, `aws_s3_bucket_versioning` |
 
-> **Note on SC-28.** FRMR 0.9.43-beta does not list SC-28 in any KSI's `controls` array, so no KSI cleanly maps to "encryption of data at rest." KSI-SVC-VRI (integrity via cryptography) is the nearest fit in the Service Configuration theme, whose description references "FedRAMP encryption policies." We treat this as a known mapping gap: the detector will be honest in its README that it evidences the infrastructure layer of at-rest encryption but cannot claim full alignment with a KSI that does not explicitly cover confidentiality-at-rest. This is the kind of gap we expect to see resolved as FRMR moves from beta toward GA.
+> **Note on SC-28 (encryption at rest).** FRMR 0.9.43-beta does not list SC-28 in any KSI's `controls` array. Per [DECISIONS 2026-04-21 design call #1](./DECISIONS.md), the detector declares `ksis=[]` rather than shoehorning SC-28 into a thematically-adjacent KSI (we considered KSI-SVC-VRI — integrity via crypto — but rejected it since SC-28 is specifically about confidentiality at rest, not integrity). The evidence still surfaces in the gap report's **Unmapped findings** section, honest about the current FRMR mapping gap. We expect this to resolve as FRMR moves from beta toward GA.
 
-> **Note on KSI-IAM-MFA.** The indicator requires *phishing-resistant* MFA. Our detector evidences that MFA is enforced via IAM policy condition keys, which is MFA presence but not phishing resistance. The detector README calls this out explicitly.
+> **Note on KSI-IAM-MFA.** The indicator requires *phishing-resistant* MFA. Our detector evidences that MFA is enforced via IAM policy condition keys (`aws:MultiFactorAuthPresent`), which is MFA presence but not phishing resistance. The phishing-resistance layer lives in IdP configuration (Okta, Entra, Cognito) and is procedural — outside what a scanner can see. The detector README and every per-KSI narrative calls this out explicitly.
+
+> **Note on policy documents built with `jsonencode`.** `python-hcl2` renders `jsonencode({...})` and `data.aws_iam_policy_document.X.json` as `${...}` placeholders rather than resolved JSON. The MFA detector flags these as `mfa_required=unparseable`; the Gap Agent classifies such cases as `partial` with the honest "cannot confirm or refute" narrative rather than a false positive.
 
 Every detector's `README.md` inside `src/efterlev/detectors/` names what it proves and what it does not prove. Read those before trusting a finding.
 
@@ -257,17 +288,52 @@ This also means: if you want to build a compliance workflow Efterlev doesn't shi
 
 ## Project status
 
-**Current state: pre-implementation scaffold.** The repository is documentation-complete — architecture, ICP, scope contract, threat model, competitive landscape, decision log — with the Python package skeleton (empty `__init__.py` stubs), CI (ruff / mypy / pytest on every push), vendored FedRAMP FRMR and NIST 800-53 Rev 5 catalogs, and dependency pinning all in place. Implementation lands during a focused 4-day build; a `v0.1` tag will be cut at the end of that build once the demo flow runs green end-to-end.
+**Current state: v0 shipped. Repository private; first public tag pending hardening + credential rotation.**
 
-**v0.1 targets** (on completion of the build):
+### What v0 contains
 
-- Six detectors, three agents, FedRAMP 20x Moderate only (KSI-native), AWS + Terraform only
-- Usable for KSI gap analysis and draft FRMR attestation generation
-- Not yet a production workflow
+**Pipeline.** `init → scan → agent gap → agent document → agent remediate → provenance show` runs end-to-end. Every CLI verb is also an MCP tool.
 
-**Stable surface** (designed to not break once shipped): primitive interface, detector contract, provenance model, FRMR output shape.
+**Detectors (6).** `aws.encryption_s3_at_rest`, `aws.tls_on_lb_listeners`, `aws.fips_ssl_policies_on_lb_listeners`, `aws.mfa_required_on_iam_policies`, `aws.cloudtrail_audit_logging`, `aws.backup_retention_configured`. All self-contained under `src/efterlev/detectors/aws/<capability>/` with detector.py, mapping.yaml, evidence.yaml, fixtures/, and README.md. Each detector's README names what it proves and what it does not.
 
-**Changing surface:** detector content (as we add more), agent system prompts (as we tune them), CLI ergonomics (as we hear from users), OSCAL output generators (arriving in v1).
+**Agents (3).** Gap (Opus 4.7), Documentation (Sonnet 4.6), Remediation (Opus 4.7). Each has its system prompt in a sibling `.md` file — see `src/efterlev/agents/*_prompt.md`. Prompts include explicit evidence-fencing rules and cite-by-fenced-id discipline.
+
+**Primitives (2 deterministic so far).** `scan_terraform`, `generate_frmr_skeleton`. Both `@primitive`-registered and MCP-exposed. `generate_frmr_skeleton` produces a scanner-only `AttestationDraft` from evidence — the deterministic half of FRMR attestation assembly, usable standalone without any LLM call.
+
+**Provenance.** SQLite index + content-addressed blob store + append-only JSONL receipt log under `.efterlev/`. Every record (Evidence, Claim, ProvenanceRecord) is content-addressed by SHA-256. `efterlev provenance show <record_id>` walks the chain.
+
+**Output surface.** Self-contained HTML reports under `.efterlev/reports/`: gap-\<ts\>.html, documentation-\<ts\>.html, remediation-\<ksi\>-\<ts\>.html. Inline CSS, no JavaScript, no external fonts — portable, emailable, archivable. Evidence records render with a green left border; Claims render amber with the DRAFT banner. That visual split is the trust-class discipline made visible.
+
+**MCP server.** stdio transport, stateless, self-logging. 7 tools: `efterlev_init`, `efterlev_scan`, `efterlev_agent_gap`, `efterlev_agent_document`, `efterlev_agent_remediate`, `efterlev_provenance_show`, `efterlev_list_primitives`. Every tool invocation writes one `mcp_tool_call` claim record into the target repo's provenance store before dispatching. See [THREAT_MODEL.md](./THREAT_MODEL.md) T6.
+
+**CI proof.** End-to-end demo runs on every PR to [lhassa8/govnotes-demo](https://github.com/lhassa8/govnotes-demo) (public demo-target repo) using the workflow at `.github/workflows/efterlev-scan.yml`. Workflow installs Efterlev from this private repo, runs the full pipeline against real Terraform, and uploads gap + documentation + remediation HTML artifacts.
+
+**Tests.** 238 passing. `ruff check` + `ruff format --check` + `mypy --strict` clean across 70 source files. `pytest`, `ruff`, `mypy` run on every push via GitHub Actions.
+
+### What v0 does NOT contain yet
+
+- **FRMR-compatible JSON serialization** of `AttestationDraft` records. The internal model is FRMR-shaped; the serializer primitive is v1. v0 emits HTML only.
+- **OSCAL output generators.** v1. `compliance-trestle` is used for 800-53 catalog *input* today.
+- **Non-Terraform input sources.** v0 is `.tf` files only. No CloudFormation, CDK, Pulumi, Kubernetes, runtime cloud APIs.
+- **More detectors.** Six is the MVP set. The detector library is designed to grow — a new detector is one folder plus one import line.
+- **Public package on PyPI.** Install is from git while the repo is private.
+
+### Stable surface
+
+Designed to not break once shipped publicly:
+
+- `@detector` and `@primitive` decorator contracts
+- Evidence / Claim / ProvenanceRecord / AttestationDraft Pydantic models
+- CLI verb names and argument shapes
+- MCP tool names and JSON Schemas
+- `.efterlev/` on-disk layout
+
+### Changing surface
+
+- Detector content (as more land)
+- Agent system prompts (as they're tuned)
+- FRMR JSON output shape (serializer arrives in v1)
+- OSCAL generators (v1)
 
 ---
 
