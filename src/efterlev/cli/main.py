@@ -343,6 +343,21 @@ def agent_document(
         skipped = ", ".join(report.skipped_ksi_ids)
         typer.echo(f"Skipped {len(report.skipped_ksi_ids)} KSI(s): {skipped}")
 
+    from efterlev.reports import render_documentation_report_html
+
+    html_body = render_documentation_report_html(
+        report,
+        baseline_id="fedramp-20x-moderate",
+        frmr_version=frmr_doc.version,
+    )
+    reports_dir = root / ".efterlev" / "reports"
+    reports_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().astimezone().strftime("%Y%m%d-%H%M%S")
+    html_path = reports_dir / f"documentation-{timestamp}.html"
+    html_path.write_text(html_body, encoding="utf-8")
+    typer.echo("")
+    typer.echo(f"HTML report: {html_path}")
+
 
 @agent_app.command("remediate")
 def agent_remediate(

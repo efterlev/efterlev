@@ -20,6 +20,7 @@ without additional plumbing.
 
 from __future__ import annotations
 
+from efterlev.reports.documentation_report import render_documentation_report_html
 from efterlev.reports.gap_report import render_gap_report_html
 from efterlev.reports.html import DRAFT_BANNER_HTML, RECORDS_STYLESHEET, render_base_document
 
@@ -27,5 +28,6 @@ __all__ = [
     "DRAFT_BANNER_HTML",
     "RECORDS_STYLESHEET",
     "render_base_document",
+    "render_documentation_report_html",
     "render_gap_report_html",
 ]
