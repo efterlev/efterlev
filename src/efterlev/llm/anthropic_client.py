@@ -52,17 +52,20 @@ class AnthropicClient:
         messages: list[LLMMessage],
         model: str,
         max_tokens: int = 4096,
-        temperature: float = 0.0,
     ) -> LLMResponse:
         joined = system + "\n".join(m.content for m in messages)
         prompt_hash = hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
         client = self._client()
         try:
+            # No `temperature` parameter: claude-opus-4-7 (and other modern
+            # reasoning-trained models) return 400 "temperature is deprecated
+            # for this model" if it's passed. We used to default to
+            # temperature=0 for determinism; strict pydantic validation on
+            # the LLM's JSON output covers the same concern downstream.
             resp = client.messages.create(
                 model=model,
                 max_tokens=max_tokens,
-                temperature=temperature,
                 system=system,
                 messages=[{"role": "user", "content": m.content} for m in messages],
             )

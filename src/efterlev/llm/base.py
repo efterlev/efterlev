@@ -40,7 +40,15 @@ class LLMResponse:
 
 @runtime_checkable
 class LLMClient(Protocol):
-    """Call shape every Efterlev agent uses."""
+    """Call shape every Efterlev agent uses.
+
+    Note on `temperature`: we intentionally do not accept one. Claude Opus 4.7
+    and other modern reasoning-trained models reject the parameter outright
+    (the API returns 400 "temperature is deprecated for this model"). Our
+    agents already parse + validate JSON output strictly via pydantic, so the
+    determinism we cared about with temperature=0 is enforced downstream
+    anyway.
+    """
 
     def complete(
         self,
@@ -49,7 +57,6 @@ class LLMClient(Protocol):
         messages: list[LLMMessage],
         model: str,
         max_tokens: int = 4096,
-        temperature: float = 0.0,
     ) -> LLMResponse:
         """Run a single completion. Returns (text, model, prompt_hash)."""
         ...
@@ -78,7 +85,6 @@ class StubLLMClient:
         messages: list[LLMMessage],
         model: str,
         max_tokens: int = 4096,
-        temperature: float = 0.0,
     ) -> LLMResponse:
         import hashlib
 
