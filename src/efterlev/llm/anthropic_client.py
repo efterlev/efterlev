@@ -87,4 +87,16 @@ class AnthropicClient:
             raise AgentError(
                 f"anthropic response had no text content (stop_reason={resp.stop_reason!r})"
             )
+
+        # Detect output truncation explicitly: when the model hits max_tokens,
+        # the content comes back as valid-so-far text but the JSON our agents
+        # expect is almost certainly incomplete. Surfacing this as a distinct
+        # error beats letting it fall through to "invalid JSON on line 201"
+        # downstream, which has nothing to do with the actual cause.
+        if resp.stop_reason == "max_tokens":
+            raise AgentError(
+                f"anthropic response truncated at max_tokens={max_tokens}. "
+                "Increase the max_tokens argument the agent passes to _invoke_llm."
+            )
+
         return LLMResponse(text="".join(parts), model=resp.model, prompt_hash=prompt_hash)

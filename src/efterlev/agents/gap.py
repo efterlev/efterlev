@@ -102,7 +102,12 @@ class GapAgent(Agent):
         mapped_evidence, unmapped_evidence = _split_mapped_unmapped(input.evidence)
         user_message = _build_user_message(input.indicators, mapped_evidence, unmapped_evidence)
 
-        report, response, system_prompt = self._invoke_llm(user_message=user_message)
+        # 16384 to fit classifications for the full FedRAMP 20x baseline (60
+        # KSIs as of FRMR 0.9.43-beta). The default 4096 truncates mid-JSON
+        # around the 40th classification when every KSI gets a real rationale.
+        report, response, system_prompt = self._invoke_llm(
+            user_message=user_message, max_tokens=16384
+        )
         assert isinstance(report, GapReport)  # type narrowing
 
         _validate_cited_ids(report, fenced_prompt=system_prompt + "\n" + user_message)
