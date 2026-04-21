@@ -43,5 +43,6 @@ out/
 .env
 .env.local
 *.pem
+.claude/settings.local.json
 
 # Note: uv.lock is intentionally committed.
