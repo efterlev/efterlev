@@ -1,0 +1,11 @@
+detector_id: aws.tls_on_lb_listeners
+
+evidence_shape:
+  resource_type: string        # "aws_lb_listener" | "aws_alb_listener"
+  resource_name: string        # the Terraform logical name
+  protocol: string?            # listener protocol; may be null if unset
+  port: integer?               # listener port; may be null
+  tls_state: enum              # "present" | "absent" | "unknown"
+  ssl_policy: string?          # present when listener declares an ssl_policy
+  certificate_arn_present: bool
+  gap: string?                 # present only on negative evidence (tls_state=absent)

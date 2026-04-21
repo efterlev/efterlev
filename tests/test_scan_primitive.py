@@ -35,14 +35,24 @@ def _write_plain_bucket(dir_: Path) -> None:
     (dir_ / "plain.tf").write_text('resource "aws_s3_bucket" "open" { bucket = "open" }\n')
 
 
+def _terraform_detector_count() -> int:
+    """Count every terraform-sourced detector registered — source of truth."""
+    from efterlev.detectors.base import get_registry
+
+    return sum(1 for spec in get_registry().values() if spec.source == "terraform")
+
+
 def test_scan_of_encrypted_bucket_produces_one_evidence(tmp_path: Path) -> None:
     _write_encrypted_bucket(tmp_path)
     with ProvenanceStore(tmp_path) as store, active_store(store):
         result = scan_terraform(ScanTerraformInput(target_dir=tmp_path))
     assert result.resources_parsed == 1
-    assert result.detectors_run == 1  # just aws.encryption_s3_at_rest at v0
-    assert result.evidence_count == 1
-    ev = result.evidence[0]
+    assert result.detectors_run == _terraform_detector_count()
+    # Only the S3-encryption detector produces evidence for an S3 bucket;
+    # the others (LB, IAM, CloudTrail, backup) no-op on this input.
+    encryption_evidence = [e for e in result.evidence if "encryption_state" in e.content]
+    assert len(encryption_evidence) == 1
+    ev = encryption_evidence[0]
     assert ev.content["encryption_state"] == "present"
     assert ev.content["algorithm"] == "AES256"
 
@@ -51,8 +61,9 @@ def test_scan_of_plain_bucket_produces_absent_evidence(tmp_path: Path) -> None:
     _write_plain_bucket(tmp_path)
     with ProvenanceStore(tmp_path) as store, active_store(store):
         result = scan_terraform(ScanTerraformInput(target_dir=tmp_path))
-    assert result.evidence_count == 1
-    assert result.evidence[0].content["encryption_state"] == "absent"
+    encryption_evidence = [e for e in result.evidence if "encryption_state" in e.content]
+    assert len(encryption_evidence) == 1
+    assert encryption_evidence[0].content["encryption_state"] == "absent"
 
 
 def test_scan_persists_evidence_and_one_primitive_invocation_record(tmp_path: Path) -> None:
@@ -62,6 +73,7 @@ def test_scan_persists_evidence_and_one_primitive_invocation_record(tmp_path: Pa
         result = scan_terraform(ScanTerraformInput(target_dir=tmp_path))
         record_ids = store.iter_records()
 
+    # Two buckets, one encryption-at-rest hit each; other detectors no-op on S3.
     assert result.evidence_count == 2
     # Two detector-emitted Evidence + one scan_terraform invocation record.
     assert len(record_ids) == 3
@@ -71,7 +83,7 @@ def test_scan_without_tf_files_is_a_clean_noop(tmp_path: Path) -> None:
     with ProvenanceStore(tmp_path) as store, active_store(store):
         result = scan_terraform(ScanTerraformInput(target_dir=tmp_path))
     assert result.resources_parsed == 0
-    assert result.detectors_run == 1
+    assert result.detectors_run == _terraform_detector_count()
     assert result.evidence_count == 0
 
 

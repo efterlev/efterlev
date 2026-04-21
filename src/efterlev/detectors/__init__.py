@@ -15,4 +15,10 @@ from __future__ import annotations
 
 # Detector registrations. Each import triggers the @detector decorator
 # that registers the detector with the module-level _REGISTRY.
-from efterlev.detectors.aws import encryption_s3_at_rest  # noqa: F401
+from efterlev.detectors.aws import (
+    backup_retention_configured,  # noqa: F401
+    cloudtrail_audit_logging,  # noqa: F401
+    encryption_s3_at_rest,  # noqa: F401
+    mfa_required_on_iam_policies,  # noqa: F401
+    tls_on_lb_listeners,  # noqa: F401
+)

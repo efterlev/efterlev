@@ -1,0 +1,23 @@
+detector_id: aws.tls_on_lb_listeners
+
+ksis:
+  - id: KSI-SVC-SNT
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence only. The detector confirms that AWS
+      load-balancer listeners accept TLS/HTTPS connections; it does not
+      evidence HTTP→HTTPS redirects, ssl_policy FIPS-compliance, or
+      runtime cipher negotiation. Those live in follow-up detectors
+      (v0 has the follow-ups deferred) or in procedural evidence the
+      scanner cannot see.
+
+controls:
+  - id: SC-8
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      Evidences that the listener is TLS-enabled in the Terraform
+      configuration. Does not confirm integrity protections (SC-8(1)
+      distinct enhancement) or that the cipher suites chosen via
+      ssl_policy are FIPS-approved (that's SC-13 territory, handled by
+      a separate detector in v1).

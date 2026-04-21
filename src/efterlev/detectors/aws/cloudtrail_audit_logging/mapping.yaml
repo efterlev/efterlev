@@ -1,0 +1,26 @@
+detector_id: aws.cloudtrail_audit_logging
+
+ksis:
+  - id: KSI-MLA-LET
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence. Confirms an aws_cloudtrail resource
+      exists with management-event coverage. Does not confirm event-type
+      coverage beyond management events, nor downstream SIEM ingestion.
+  - id: KSI-MLA-OSM
+    coverage: partial
+    notes: >
+      CloudTrail is the SIEM ingest surface at AWS. The detector confirms
+      events are being generated; it does not evidence that those events
+      flow to a SIEM or that alerting is configured — those live in the
+      SIEM's own configuration, outside Terraform.
+
+controls:
+  - id: AU-2
+    evidence_type: infrastructure
+    coverage: partial
+    notes: Event logging enabled at the control-plane layer.
+  - id: AU-12
+    evidence_type: infrastructure
+    coverage: partial
+    notes: Audit record generation via CloudTrail.

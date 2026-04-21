@@ -1,0 +1,12 @@
+detector_id: aws.backup_retention_configured
+
+evidence_shape:
+  resource_type: string           # aws_db_instance | aws_rds_cluster |
+                                  # aws_s3_bucket_versioning | aws_s3_bucket
+  resource_name: string
+  mechanism: enum                 # "rds_retention" | "s3_versioning"
+  backup_state: enum              # "present" | "absent"
+  retention_days: integer?        # RDS only
+  versioning_status: string?      # S3 only ("Enabled" | "Suspended" | "Disabled")
+  legacy_inline_block: bool?      # true when inferred from aws_s3_bucket.versioning
+  gap: string?                    # present when backup_state=absent

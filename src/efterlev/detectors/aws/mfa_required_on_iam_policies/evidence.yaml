@@ -1,0 +1,8 @@
+detector_id: aws.mfa_required_on_iam_policies
+
+evidence_shape:
+  resource_type: string             # aws_iam_{,role_,user_,group_}policy
+  resource_name: string             # the Terraform logical name
+  mfa_required: enum                # "present" | "absent" | "unparseable"
+  allow_statement_count: integer?   # number of Allow statements in the policy
+  gap: string?                      # present when state is absent or unparseable

@@ -1,0 +1,21 @@
+detector_id: aws.backup_retention_configured
+
+ksis:
+  - id: KSI-RPL-ABO
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence. Confirms backup mechanics exist
+      (RDS retention window > 0, or S3 versioning enabled). Does NOT
+      prove alignment of the retention duration with the user's
+      recovery-time / recovery-point objectives — that claim requires
+      procedural evidence (RTO/RPO documents, exercise results) outside
+      Terraform.
+
+controls:
+  - id: CP-9
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      System-backup mechanics configured. Does not cover restore-testing
+      practices, cross-region replication, or backup-integrity
+      verification — those remain procedural / runtime concerns.

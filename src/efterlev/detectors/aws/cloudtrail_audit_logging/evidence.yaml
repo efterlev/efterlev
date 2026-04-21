@@ -1,0 +1,10 @@
+detector_id: aws.cloudtrail_audit_logging
+
+evidence_shape:
+  resource_type: string            # "aws_cloudtrail"
+  resource_name: string
+  cloudtrail_state: enum           # "present" | "partial"
+  is_multi_region: bool
+  includes_global_events: bool
+  has_event_selectors: bool
+  gap: string?                     # present when cloudtrail_state=partial

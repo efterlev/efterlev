@@ -1,0 +1,23 @@
+detector_id: aws.mfa_required_on_iam_policies
+
+ksis:
+  - id: KSI-IAM-MFA
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence only. The detector confirms that IAM
+      policy documents gate Allow statements behind an
+      aws:MultiFactorAuthPresent condition. It does NOT prove phishing-
+      resistance (FIDO2/WebAuthn tier) — that lives in the IdP
+      configuration (Okta, Entra, Cognito) and is procedural evidence
+      beyond Terraform's view.
+
+controls:
+  - id: IA-2
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      Evidences the presence of an MFA requirement on IAM policy
+      statements. Full IA-2 coverage additionally requires procedural
+      evidence that users are enrolled in MFA, that recovery paths do
+      not bypass it, and that the MFA factors used are of sufficient
+      assurance level — none of which the scanner sees.
