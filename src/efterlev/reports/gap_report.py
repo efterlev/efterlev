@@ -25,7 +25,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from jinja2 import Environment, select_autoescape
-from markupsafe import Markup
 
 from efterlev.agents import GapReport
 from efterlev.reports.html import DRAFT_BANNER_HTML, render_base_document
@@ -127,6 +126,10 @@ def render_gap_report_html(
     """Return a complete HTML document rendering of a GapReport."""
     env = Environment(autoescape=select_autoescape(["html", "xml"]))
     template = env.from_string(_BODY_TEMPLATE)
+    # `body` is a Jinja-rendered, autoescape-protected string. Passing it to
+    # `render_base_document` as `body_html` is safe: the base renderer
+    # interpolates via f-string (no re-escape, which is what we want —
+    # user-controlled content was already escaped inside Jinja).
     body = template.render(
         classifications=report.ksi_classifications,
         unmapped_findings=report.unmapped_findings,
@@ -143,6 +146,6 @@ def render_gap_report_html(
             f"{len(report.ksi_classifications)} KSI classification(s), "
             f"{len(report.unmapped_findings)} unmapped finding(s)"
         ),
-        body_html=Markup(body),
+        body_html=body,
         generated_at=when,
     )

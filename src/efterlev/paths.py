@@ -81,6 +81,33 @@ def vendored_catalogs_dir() -> Path:
     )
 
 
+def resolve_within_root(candidate: Path, root: Path) -> Path | None:
+    """Resolve `candidate` against `root`, rejecting any path that escapes it.
+
+    Used by the Remediation Agent / CLI to safely read `.tf` files referenced
+    by `Evidence.source_ref.file`. Evidence could in principle contain a
+    traversal payload (`../../../etc/passwd`) — a malicious detector, a
+    corrupted store, or a hand-edited blob could smuggle one in. This helper
+    joins `candidate` onto `root`, fully resolves symlinks, and verifies the
+    result is still under the resolved `root`. Returns the resolved path on
+    success, `None` on any attempted escape.
+
+    `candidate` may be absolute or relative. Absolute candidates are rejected
+    outright — evidence paths should be repo-relative by convention, and an
+    absolute path is an unambiguous signal that something went wrong upstream.
+    """
+    if candidate.is_absolute():
+        return None
+    resolved_root = root.resolve()
+    try:
+        full = (resolved_root / candidate).resolve()
+        # relative_to raises ValueError if `full` isn't under `resolved_root`.
+        full.relative_to(resolved_root)
+    except (OSError, ValueError):
+        return None
+    return full
+
+
 def verify_catalog_hashes(catalogs_dir: Path) -> None:
     """Hash every file named in EXPECTED_HASHES under `catalogs_dir`.
 

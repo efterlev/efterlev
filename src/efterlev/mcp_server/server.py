@@ -60,10 +60,21 @@ def build_server() -> Server[None, Any]:
         try:
             result = dispatch_tool(name, arguments, client_id=client_id)
         except EfterlevError as e:
-            # Return the error as a structured TextContent payload rather
-            # than raising — MCP clients get a clean error string, and our
-            # own typed exceptions don't leak as framework tracebacks.
+            # Recognized domain error: surface the message and type so the
+            # MCP client can do something useful with it.
             payload = {"error": str(e), "error_type": type(e).__name__}
+            return [TextContent(type="text", text=json.dumps(payload, indent=2))]
+        except Exception as e:
+            # Unexpected error (ValidationError on malformed args, bug in a
+            # handler, etc.). Log server-side for debugging but don't leak
+            # internals to the client — it just sees "internal error" and
+            # the exception class. Framework tracebacks would expose file
+            # paths and local state MCP clients shouldn't see.
+            log.exception("unhandled exception in MCP tool %r", name)
+            payload = {
+                "error": "internal error",
+                "error_type": type(e).__name__,
+            }
             return [TextContent(type="text", text=json.dumps(payload, indent=2))]
 
         return [TextContent(type="text", text=json.dumps(result, indent=2, default=str))]

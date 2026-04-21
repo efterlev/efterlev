@@ -67,6 +67,10 @@ class AnthropicClient:
                 messages=[{"role": "user", "content": m.content} for m in messages],
             )
         except Exception as e:
+            # The SDK raises a zoo of types (APIError, RateLimitError,
+            # APIConnectionError, AuthenticationError, …). Unifying them all
+            # as AgentError keeps the downstream error path single — agents
+            # catch one type, not N.
             raise AgentError(f"anthropic completion failed: {e}") from e
 
         # SDK returns a list of content blocks; only `text` blocks are expected

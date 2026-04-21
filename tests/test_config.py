@@ -39,9 +39,9 @@ def test_round_trip_through_toml(tmp_path: Path) -> None:
     assert restored == cfg
 
 
-def test_load_missing_config_raises() -> None:
+def test_load_missing_config_raises(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="not found"):
-        load_config(Path("/tmp/does-not-exist-efterlev-config.toml"))
+        load_config(tmp_path / "does-not-exist.toml")
 
 
 def test_load_malformed_toml_raises(tmp_path: Path) -> None:

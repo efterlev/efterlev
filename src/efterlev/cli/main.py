@@ -417,12 +417,20 @@ def agent_remediate(
 
             # Read the .tf files every evidence record points at, keyed by
             # the path as stored in the evidence (typically repo-relative).
+            # `resolve_within_root` rejects absolute paths and `..` traversal
+            # so a hostile evidence record cannot exfiltrate arbitrary files
+            # from the host.
+            from efterlev.paths import resolve_within_root
+
             source_files: dict[str, str] = {}
             for ev in ksi_evidence:
-                file_path = Path(str(ev.source_ref.file))
-                full = file_path if file_path.is_absolute() else root / file_path
-                if full.is_file() and str(ev.source_ref.file) not in source_files:
-                    source_files[str(ev.source_ref.file)] = full.read_text(encoding="utf-8")
+                rel_path = Path(str(ev.source_ref.file))
+                full = resolve_within_root(rel_path, root)
+                if full is None or not full.is_file():
+                    continue
+                key = str(ev.source_ref.file)
+                if key not in source_files:
+                    source_files[key] = full.read_text(encoding="utf-8")
 
             with active_store(store):
                 agent = RemediationAgent()

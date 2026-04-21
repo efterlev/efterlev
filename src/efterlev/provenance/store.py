@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 import threading
 from pathlib import Path
@@ -27,6 +28,8 @@ from typing import Any
 from efterlev.errors import ProvenanceError
 from efterlev.models import ProvenanceRecord, RecordType
 from efterlev.provenance.receipts import ReceiptLog
+
+log = logging.getLogger(__name__)
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS provenance_records (
@@ -231,6 +234,13 @@ class ProvenanceStore:
         deterministic but have payload shape `{"input": ..., "output": ...}`,
         so the structural filter cleanly separates them.
 
+        Silently drops records whose blob is missing, unreadable, or has an
+        unexpected shape — `log.warning` flags each drop so an operator
+        investigating a missing evidence record has a breadcrumb. A corrupt
+        store is a real failure mode (blob store + SQLite could drift under
+        disk-full or killed-mid-write conditions); surfacing the drop count
+        in logs is better than silently swallowing.
+
         Returns a list because iteration order matters for deterministic
         display and test assertions; the list size is bounded by the number
         of detector hits, which at v0 is small.
@@ -243,15 +253,32 @@ class ProvenanceStore:
         for record_id, content_ref in rows:
             full = self.blob_dir / content_ref
             if not full.exists():
+                log.warning(
+                    "iter_evidence: blob missing for record %s (ref %s); skipping",
+                    record_id,
+                    content_ref,
+                )
                 continue
             try:
                 payload = json.loads(full.read_bytes())
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                log.warning(
+                    "iter_evidence: blob at %s is not valid JSON (%s); skipping record %s",
+                    content_ref,
+                    e,
+                    record_id,
+                )
                 continue
             if not isinstance(payload, dict):
+                log.warning(
+                    "iter_evidence: blob at %s is not a JSON object; skipping record %s",
+                    content_ref,
+                    record_id,
+                )
                 continue
             # Detector-emitted Evidence has these required fields; primitive
-            # invocation records have {"input","output"} instead.
+            # invocation records have {"input","output"} instead — those are
+            # an expected structural mismatch, not a corruption, so no log.
             if {"detector_id", "source_ref", "timestamp"} <= payload.keys():
                 results.append((record_id, payload))
         return results

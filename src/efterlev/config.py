@@ -16,7 +16,7 @@ from __future__ import annotations
 import tomllib
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from efterlev.errors import ConfigError
 
@@ -73,7 +73,7 @@ def load_config(path: Path) -> Config:
         raise ConfigError(f"config at {path} is not valid TOML: {e}") from e
     try:
         return Config.model_validate(raw)
-    except Exception as e:  # pydantic.ValidationError; kept broad for readability
+    except ValidationError as e:
         raise ConfigError(f"config at {path} does not match schema: {e}") from e
 
 

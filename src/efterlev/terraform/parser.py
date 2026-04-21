@@ -47,6 +47,9 @@ def parse_terraform_file(path: Path) -> list[TerraformResource]:
         with path.open(encoding="utf-8") as f:
             parsed: dict[str, Any] = hcl2.load(f)
     except Exception as e:
+        # hcl2 raises lark.exceptions.UnexpectedInput, ValueError,
+        # and occasional TypeError on malformed HCL — all map to the
+        # same "this .tf file can't be parsed" user-facing story.
         raise DetectorError(f"failed to parse {path}: {e}") from e
 
     # Build (type, name) -> line_start map by text-scanning the source.

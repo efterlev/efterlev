@@ -91,6 +91,61 @@ def test_dispatch_rejects_unknown_tool() -> None:
         dispatch_tool("not_a_real_tool", {})
 
 
+def test_server_call_tool_catches_unexpected_exception(tmp_path: Path) -> None:
+    """A bug inside a handler should not leak a framework traceback to the client.
+
+    The server's `call_tool` handler catches every exception (not just
+    EfterlevError) and returns a generic `{"error": "internal error",
+    "error_type": "<ClassName>"}` payload. This test patches
+    `dispatch_tool` to raise something unexpected and asserts the wrapper
+    is the one catching it.
+    """
+    import asyncio
+    import json
+
+    from efterlev.mcp_server import server as server_module
+
+    built = server_module.build_server()
+    # Find the registered call_tool handler — the MCP SDK stores handlers
+    # indexed by request type, keyed on the Pydantic model class.
+    from mcp.types import CallToolRequest
+
+    handler = built.request_handlers[CallToolRequest]
+
+    # Monkeypatch dispatch_tool to raise a non-EfterlevError exception.
+    original = server_module.dispatch_tool
+
+    def _boom(name: str, arguments: dict, *, client_id: str = "unknown") -> dict:
+        raise TypeError("simulated handler bug")
+
+    server_module.dispatch_tool = _boom
+    try:
+        # Simulate a CallToolRequest envelope.
+        from mcp.types import CallToolRequestParams
+
+        req = CallToolRequest(
+            method="tools/call",
+            params=CallToolRequestParams(name="efterlev_list_primitives", arguments={}),
+        )
+        result = asyncio.run(handler(req))
+    finally:
+        server_module.dispatch_tool = original
+
+    # The handler returns a CallToolResult with our structured error payload
+    # as its only TextContent block. We deliberately do NOT raise (which
+    # would make MCP set isError=True but would also leak the raw exception
+    # text to the client); the JSON payload inside content carries the
+    # error information in a form clients can parse.
+    inner = result.root
+    content = inner.content[0]
+    payload = json.loads(content.text)
+    assert payload["error"] == "internal error"
+    assert payload["error_type"] == "TypeError"
+    # Simulated message MUST NOT appear in the response — that's the whole
+    # point of not leaking internal exception text to MCP clients.
+    assert "simulated handler bug" not in content.text
+
+
 def test_dispatch_rejects_missing_target(tmp_path: Path) -> None:
     with pytest.raises(EfterlevError, match="requires a `target`"):
         dispatch_tool("efterlev_scan", {})

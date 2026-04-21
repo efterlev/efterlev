@@ -408,12 +408,18 @@ def _tool_agent_remediate(target: Path, ksi: str) -> dict[str, Any]:
     all_evidence = [Evidence.model_validate(p) for _rid, p in store.iter_evidence()]
     ksi_evidence = [ev for ev in all_evidence if ksi in ev.ksis_evidenced]
 
+    # `resolve_within_root` rejects absolute paths and `..` traversal so a
+    # hostile evidence record cannot exfiltrate files outside `target`.
+    from efterlev.paths import resolve_within_root
+
     source_files: dict[str, str] = {}
     for ev in ksi_evidence:
-        file_path = Path(str(ev.source_ref.file))
-        full = file_path if file_path.is_absolute() else target / file_path
+        rel_path = Path(str(ev.source_ref.file))
+        full = resolve_within_root(rel_path, target)
+        if full is None or not full.is_file():
+            continue
         key = str(ev.source_ref.file)
-        if full.is_file() and key not in source_files:
+        if key not in source_files:
             source_files[key] = full.read_text(encoding="utf-8")
 
     agent = RemediationAgent()
