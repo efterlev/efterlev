@@ -114,7 +114,18 @@ class DocumentationAgent(Agent):
                 skipped.append(clf.ksi_id)
                 continue
 
-            ksi_evidence = [ev for ev in input.evidence if clf.ksi_id in ev.ksis_evidenced]
+            # Resolve evidence via the Gap classification's cited IDs rather
+            # than re-filtering by `ksis_evidenced`. Rationale: the Gap Agent
+            # is allowed to reason about cross-KSI relevance (e.g. citing a
+            # CloudTrail record — detector-attributed to KSI-MLA-LET/OSM —
+            # when classifying KSI-CMT-LMC, since modification events *are*
+            # change-management-relevant). Using clf.evidence_ids here keeps
+            # the Doc Agent's narrative coherent with the classification:
+            # whatever evidence Gap cited, Doc shows. The Evidence's
+            # ksis_evidenced stays as the detector's default attribution —
+            # agents can extend it via reasoning.
+            cited_ids = set(clf.evidence_ids)
+            ksi_evidence = [ev for ev in input.evidence if ev.evidence_id in cited_ids]
 
             skeleton_result = generate_frmr_skeleton(
                 GenerateFrmrSkeletonInput(

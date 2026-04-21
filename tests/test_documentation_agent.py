@@ -53,12 +53,16 @@ def _ind(ksi_id: str = "KSI-SVC-VRI") -> Indicator:
     )
 
 
-def _clf(ksi_id: str = "KSI-SVC-VRI", status: str = "partial") -> KsiClassification:
+def _clf(
+    ksi_id: str = "KSI-SVC-VRI",
+    status: str = "partial",
+    evidence_ids: list[str] | None = None,
+) -> KsiClassification:
     return KsiClassification(
         ksi_id=ksi_id,
         status=status,  # type: ignore[arg-type]
         rationale="Encryption config present but procedural integrity unverified.",
-        evidence_ids=[],
+        evidence_ids=evidence_ids or [],
     )
 
 
@@ -92,7 +96,7 @@ def test_documentation_agent_drafts_attestation_for_each_eligible_ksi(
             DocumentationAgentInput(
                 indicators={"KSI-SVC-VRI": _ind()},
                 evidence=[ev],
-                classifications=[_clf()],
+                classifications=[_clf(evidence_ids=[ev.evidence_id])],
                 baseline_id="fedramp-20x-moderate",
                 frmr_version="0.9.43-beta",
             )
@@ -120,7 +124,7 @@ def test_documentation_agent_prompt_carries_ksi_classification_and_fenced_eviden
             DocumentationAgentInput(
                 indicators={"KSI-SVC-VRI": _ind()},
                 evidence=[ev],
-                classifications=[_clf()],
+                classifications=[_clf(evidence_ids=[ev.evidence_id])],
                 baseline_id="fedramp-20x-moderate",
                 frmr_version="0.9.43-beta",
             )
@@ -170,7 +174,10 @@ def test_documentation_agent_only_ksi_filters_to_named(tmp_path: Path) -> None:
                     "KSI-SVC-SNT": _ind("KSI-SVC-SNT"),
                 },
                 evidence=[ev_a, ev_b],
-                classifications=[_clf("KSI-SVC-VRI"), _clf("KSI-SVC-SNT")],
+                classifications=[
+                    _clf("KSI-SVC-VRI", evidence_ids=[ev_a.evidence_id]),
+                    _clf("KSI-SVC-SNT", evidence_ids=[ev_b.evidence_id]),
+                ],
                 baseline_id="fedramp-20x-moderate",
                 frmr_version="0.9.43-beta",
                 only_ksi="KSI-SVC-VRI",
@@ -228,6 +235,111 @@ def test_documentation_agent_rejects_fabricated_evidence_citation(tmp_path: Path
                 frmr_version="0.9.43-beta",
             )
         )
+
+
+# -- Gap→Doc evidence attribution flow -------------------------------------
+
+
+def test_doc_agent_honors_cross_ksi_evidence_citations(tmp_path: Path) -> None:
+    """The Gap Agent can cite evidence outside a KSI's detector-default attribution.
+
+    Concrete case from the first real govnotes-demo run: a CloudTrail
+    evidence record is attributed by the detector to KSI-MLA-LET and
+    KSI-MLA-OSM (the detector's default), but the Gap Agent reasoned
+    that "CloudTrail logs modifications" is also relevant to KSI-CMT-LMC
+    (change monitoring) and cited that record when classifying CMT-LMC.
+
+    Under the old filter (ksis_evidenced contains ksi_id), the Doc Agent
+    received an empty evidence list for CMT-LMC and narrated "Gap cited
+    evidence but I don't have it" — incoherent with the classification.
+
+    Under the new filter (evidence_id in clf.evidence_ids), cross-KSI
+    reasoning flows through cleanly. Whatever Gap cites, Doc shows.
+    """
+    # Evidence attributed ONLY to MLA-LET (detector-default) but cited
+    # by the classification for a different KSI.
+    cloudtrail_ev = Evidence.create(
+        detector_id="aws.cloudtrail_audit_logging",
+        source_ref=SourceRef(file=Path("logging.tf"), line_start=103, line_end=123),
+        ksis_evidenced=["KSI-MLA-LET"],  # notably NOT KSI-CMT-LMC
+        controls_evidenced=["AU-2", "AU-12"],
+        content={"cloudtrail_state": "present", "is_multi_region": True},
+        timestamp=datetime(2026, 4, 21, tzinfo=UTC),
+    )
+    cmt_lmc_indicator = Indicator(
+        id="KSI-CMT-LMC",
+        theme="CMT",
+        name="Logging Modifications to Configuration",
+        statement="Log all modifications to machine-based information resources.",
+        controls=["CM-3", "CM-4"],
+    )
+    classification = _clf(
+        ksi_id="KSI-CMT-LMC",
+        evidence_ids=[cloudtrail_ev.evidence_id],  # Gap Agent's cross-KSI citation
+    )
+
+    stub = StubLLMClient(response_text=_canned_narrative(cloudtrail_ev.evidence_id))
+    with ProvenanceStore(tmp_path) as store, active_store(store):
+        agent = DocumentationAgent(client=stub)
+        report = agent.run(
+            DocumentationAgentInput(
+                indicators={"KSI-CMT-LMC": cmt_lmc_indicator},
+                evidence=[cloudtrail_ev],
+                classifications=[classification],
+                baseline_id="fedramp-20x-moderate",
+                frmr_version="0.9.43-beta",
+            )
+        )
+
+    # The attestation must be drafted and cite the evidence — even though
+    # the evidence record's ksis_evidenced does NOT contain KSI-CMT-LMC.
+    assert len(report.attestations) == 1
+    att = report.attestations[0]
+    assert att.draft.ksi_id == "KSI-CMT-LMC"
+    assert len(att.draft.citations) == 1
+    assert att.draft.citations[0].evidence_id == cloudtrail_ev.evidence_id
+
+    # The fenced evidence MUST appear in the prompt the Doc Agent sent.
+    user = stub.last_messages[0].content
+    assert f'<evidence id="{cloudtrail_ev.evidence_id}">' in user
+
+
+def test_doc_agent_empty_evidence_when_classification_cites_nothing(tmp_path: Path) -> None:
+    """A `not_implemented` classification with evidence_ids=[] gets no evidence.
+
+    Correct behavior: the LLM drafts a narrative explaining the absence,
+    the skeleton has zero citations, and nothing is fabricated. Locks in
+    that the new filter doesn't silently reach back for evidence the
+    classification didn't cite.
+    """
+    unrelated_ev = _ev()  # attributed to KSI-SVC-VRI, NOT cited by the classification
+    classification = _clf(ksi_id="KSI-SVC-VRI", status="not_implemented", evidence_ids=[])
+    stub = StubLLMClient(
+        response_text=json.dumps(
+            {
+                "narrative": "No scanner evidence was produced for this KSI.",
+                "cited_evidence_ids": [],
+            }
+        )
+    )
+    with ProvenanceStore(tmp_path) as store, active_store(store):
+        agent = DocumentationAgent(client=stub)
+        report = agent.run(
+            DocumentationAgentInput(
+                indicators={"KSI-SVC-VRI": _ind()},
+                evidence=[unrelated_ev],  # present in input but not cited
+                classifications=[classification],
+                baseline_id="fedramp-20x-moderate",
+                frmr_version="0.9.43-beta",
+            )
+        )
+
+    att = report.attestations[0]
+    assert att.draft.citations == []
+    # The uncited evidence MUST NOT appear in the prompt — otherwise
+    # the model could be tempted to cite evidence the Gap Agent didn't.
+    user = stub.last_messages[0].content
+    assert unrelated_ev.evidence_id not in user
 
 
 # -- reconstruction from store ----------------------------------------------

@@ -557,6 +557,32 @@ These came out of the review and need explicit decisions, not just implementatio
 
 ---
 
+## 2026-04-21 — Evidence.ksis_evidenced is default attribution, not authoritative `[agents]` `[data-model]`
+
+**Decision:** The Documentation Agent resolves per-KSI evidence via the Gap classification's `evidence_ids` list, not by re-filtering the input evidence by `Evidence.ksis_evidenced`. `Evidence.ksis_evidenced` now means *"the KSIs the detector attributed this evidence to by default"* — an advisory starting point that agents can extend through reasoning — not *"the authoritative list of KSIs this evidence applies to."*
+
+**Rationale:**
+
+- Surfaced by the first real govnotes-demo run. The Gap Agent classified `KSI-CMT-LMC` (Logging Modifications to Configuration) as `partial` and cited the CloudTrail evidence record, reasoning that CloudTrail's modification events *are* change-management-relevant. But the CloudTrail detector's default attribution is only `KSI-MLA-LET` + `KSI-MLA-OSM`. Under the old filter (`ksi_id in ev.ksis_evidenced`) the Doc Agent got an empty evidence list for `KSI-CMT-LMC` and rendered a narrative that said *"the Gap Agent cited evidence but it's absent from this prompt."* Incoherent with the classification it was documenting.
+- Cross-KSI reasoning is a valid Claim-side extension of detector-side attribution. Detectors are conservative — they attribute evidence only to KSIs the detector's written scope covers. Agents reason over the broader picture. The data model should let that reasoning flow through without losing the evidence pointer.
+- Using `clf.evidence_ids` keeps Doc and Gap seeing the same evidence set for any given KSI classification, which is the coherence guarantee we actually want. Whatever Gap cited, Doc renders.
+- The fence-citation validator (DECISIONS 2026-04-21 design call #3) is still the hard backstop against fabricated IDs — the Gap Agent can only cite evidence that appeared in *its* prompt, which at v0 is every detector-emitted evidence record in the scan. So "cross-KSI citation" is bounded by "evidence the scanner actually produced."
+
+**Alternatives rejected:**
+
+- **Keep the `ksis_evidenced` filter; enforce stricter Gap Agent citation discipline.** Rejected. The discipline would require the Gap Agent to cite evidence only when the KSI it's classifying is already in `ksis_evidenced`. That prevents legitimate cross-KSI reasoning (the CloudTrail→CMT-LMC case is *correct* reasoning, not a bug). Strict attribution would force every legitimate reasoning connection into detector-code changes, which doesn't scale.
+- **Broaden detectors' `ksis_evidenced` lists to include cross-reasoning KSIs.** Rejected. Detectors would accumulate aspirational KSI attributions ("this evidence could plausibly apply to X, Y, Z, W…") that bloat the attribution list and make the detector contract mushier. The right split is: detectors declare narrow defaults; agents extend via reasoning.
+- **Pass the full unfiltered evidence set to Doc Agent; let the LLM self-filter per classification.** Rejected. The Doc Agent then has no per-KSI scoping and spends tokens on irrelevant evidence. Using `clf.evidence_ids` gives Doc exactly the evidence the classification claims as relevant.
+
+**Implementation impact:**
+
+- `DocumentationAgent.run`: swap `[ev for ev in input.evidence if clf.ksi_id in ev.ksis_evidenced]` → `[ev for ev in input.evidence if ev.evidence_id in set(clf.evidence_ids)]`. One-line change, big semantic effect.
+- `Evidence.ksis_evidenced` docstring semantics clarified: "default detector-side attribution, advisory. Agents may cite evidence across KSIs through reasoning."
+- Test coverage: new `test_doc_agent_honors_cross_ksi_evidence_citations` locks in the CMT-LMC-shape case (evidence attributed to one KSI, cited by a classification for a different KSI, Doc renders it). Second new test locks in the corollary — a classification with `evidence_ids=[]` gets zero evidence even if unrelated records are present in the input list.
+- No changes needed to the Remediation Agent (already resolves evidence via the KSI it's passed, from evidence-in-store), the skeleton primitive (takes evidence directly), or the detector decorator (`ksis_evidenced` semantics still valid as "default attribution").
+
+---
+
 
 
 ```
