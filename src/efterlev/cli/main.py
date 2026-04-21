@@ -18,6 +18,8 @@ Implementation phases (see `docs/dual_horizon_plan.md` §2.3):
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import typer
 
 from efterlev import __version__
@@ -145,9 +147,31 @@ def agent_remediate(
 @provenance_app.command("show")
 def provenance_show(
     record_id: str = typer.Argument(..., help="SHA-256 record ID to walk."),
+    target: Path = typer.Option(
+        Path("."),
+        "--target",
+        help="Repo containing the `.efterlev/` store. Defaults to the current directory.",
+    ),
 ) -> None:
     """Walk the provenance chain from a record back to its source lines."""
-    _stub("1", "provenance show")
+    from efterlev.errors import ProvenanceError
+    from efterlev.provenance import ProvenanceStore, render_chain_text, walk_chain
+
+    root = target.resolve()
+    if not (root / ".efterlev").is_dir():
+        typer.echo(
+            f"error: no `.efterlev/` directory under {root}. Run `efterlev init` first.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        with ProvenanceStore(root) as store:
+            tree = walk_chain(store, record_id)
+            typer.echo(render_chain_text(tree))
+    except ProvenanceError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1) from e
 
 
 @mcp_app.command("serve")

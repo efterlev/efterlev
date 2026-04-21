@@ -90,6 +90,11 @@ select = [
     "SIM",
     "RUF",
 ]
+# B008: "Do not perform function call in argument defaults" — Typer's canonical
+# pattern uses `= typer.Option(...)` as a default, which B008 flags. The pattern
+# is explicitly supported by Typer and idiomatic; globally-ignore rather than
+# per-line noqa in every CLI function signature.
+ignore = ["B008"]
 
 [tool.ruff.format]
 quote-style = "double"

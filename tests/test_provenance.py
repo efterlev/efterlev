@@ -1,0 +1,255 @@
+"""Provenance store, receipt log, walker, and verify tests.
+
+Uses `tmp_path` for filesystem isolation — every test gets a fresh
+`.efterlev/` under a pytest-managed temp dir. The store and receipts log
+are both on disk, so these are integration-ish tests, not pure units.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from threading import Thread
+
+import pytest
+
+from efterlev.errors import ProvenanceError
+from efterlev.provenance import (
+    ProvenanceStore,
+    render_chain_text,
+    verify_receipts,
+    walk_chain,
+)
+
+# --- ProvenanceStore: writes and reads ----------------------------------------
+
+
+def test_store_write_then_get_record(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        record = store.write_record(
+            payload={"detector_id": "aws.test", "content": {"x": 1}},
+            record_type="evidence",
+            primitive="scan_terraform@0.1.0",
+        )
+        assert record.record_id.startswith("sha256:")
+        assert record.content_ref.endswith(".json")
+
+        roundtrip = store.get_record(record.record_id)
+        assert roundtrip is not None
+        assert roundtrip.record_id == record.record_id
+        assert roundtrip.record_type == "evidence"
+        assert roundtrip.primitive == "scan_terraform@0.1.0"
+
+
+def test_store_read_payload_round_trips_original_dict(tmp_path: Path) -> None:
+    payload = {"detector_id": "aws.test", "content": {"resource": "bucket-1", "ok": True}}
+    with ProvenanceStore(tmp_path) as store:
+        record = store.write_record(payload=payload, record_type="evidence")
+        assert store.read_payload(record) == payload
+
+
+def test_store_same_payload_twice_shares_blob_but_produces_distinct_records(
+    tmp_path: Path,
+) -> None:
+    payload = {"detector_id": "aws.test", "content": {"x": 1}}
+    with ProvenanceStore(tmp_path) as store:
+        first = store.write_record(payload=payload, record_type="evidence")
+        second = store.write_record(payload=payload, record_type="evidence")
+        # Different records because timestamps differ...
+        assert first.record_id != second.record_id
+        # ...but the same blob on disk.
+        assert first.content_ref == second.content_ref
+
+
+def test_store_missing_record_returns_none(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        assert store.get_record("sha256:" + "0" * 64) is None
+
+
+def test_store_read_payload_raises_when_blob_missing(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        record = store.write_record(payload={"detector_id": "a"}, record_type="evidence")
+        # Simulate a corrupted store by deleting the blob.
+        (store.blob_dir / record.content_ref).unlink()
+        with pytest.raises(ProvenanceError, match="blob missing"):
+            store.read_payload(record)
+
+
+# --- ReceiptLog: atomicity under concurrency ----------------------------------
+
+
+def test_receipt_log_written_per_record(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        store.write_record(payload={"a": 1}, record_type="evidence")
+        store.write_record(payload={"a": 2}, record_type="evidence")
+        entries = store.receipts.read_all()
+        assert len(entries) == 2
+        assert all(e["record_id"].startswith("sha256:") for e in entries)
+
+
+def test_receipt_log_survives_concurrent_writes(tmp_path: Path) -> None:
+    # Ten threads each write three records in parallel. Expect 30 receipt
+    # lines total, every line valid JSON (flock serializes writes).
+    store = ProvenanceStore(tmp_path)
+
+    def worker(i: int) -> None:
+        for j in range(3):
+            store.write_record(payload={"worker": i, "n": j}, record_type="evidence")
+
+    threads = [Thread(target=worker, args=(i,)) for i in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    entries = store.receipts.read_all()
+    assert len(entries) == 30
+    # No duplicated record_ids (thread uniqueness via worker+n tuple in payload).
+    assert len({e["record_id"] for e in entries}) == 30
+    store.close()
+
+
+# --- Walker -------------------------------------------------------------------
+
+
+def test_walker_walks_three_node_chain(tmp_path: Path) -> None:
+    # evidence  <--  claim1  <--  claim2
+    with ProvenanceStore(tmp_path) as store:
+        ev = store.write_record(
+            payload={"source": "main.tf"},
+            record_type="evidence",
+            primitive="scan_terraform@0.1.0",
+        )
+        c1 = store.write_record(
+            payload={"kind": "intermediate"},
+            record_type="claim",
+            derived_from=[ev.record_id],
+            agent="gap_agent",
+            model="claude-opus-4-7",
+        )
+        c2 = store.write_record(
+            payload={"kind": "leaf"},
+            record_type="claim",
+            derived_from=[c1.record_id],
+            agent="documentation_agent",
+            model="claude-opus-4-7",
+        )
+
+        tree = walk_chain(store, c2.record_id)
+        assert tree.record.record_id == c2.record_id
+        assert len(tree.parents) == 1
+        assert tree.parents[0].record.record_id == c1.record_id
+        assert len(tree.parents[0].parents) == 1
+        assert tree.parents[0].parents[0].record.record_id == ev.record_id
+        assert tree.parents[0].parents[0].parents == []  # leaf
+
+
+def test_walker_raises_on_missing_record(tmp_path: Path) -> None:
+    with (
+        ProvenanceStore(tmp_path) as store,
+        pytest.raises(ProvenanceError, match="record not found"),
+    ):
+        walk_chain(store, "sha256:" + "0" * 64)
+
+
+def test_walker_raises_on_cycle(tmp_path: Path) -> None:
+    # Manufacture a corrupt store by writing a record whose derived_from
+    # references itself via direct SQL. Walker must detect the cycle.
+    with ProvenanceStore(tmp_path) as store:
+        record = store.write_record(payload={"x": 1}, record_type="evidence")
+        store._conn.execute(
+            "UPDATE provenance_records SET derived_from = ? WHERE record_id = ?",
+            (json.dumps([record.record_id]), record.record_id),
+        )
+        store._conn.commit()
+
+        with pytest.raises(ProvenanceError, match="cycle in provenance graph"):
+            walk_chain(store, record.record_id)
+
+
+def test_render_chain_text_indents_parents(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        ev = store.write_record(payload={"x": 1}, record_type="evidence")
+        claim = store.write_record(
+            payload={"y": 2},
+            record_type="claim",
+            derived_from=[ev.record_id],
+            agent="gap_agent",
+            model="claude-opus-4-7",
+        )
+        tree = walk_chain(store, claim.record_id)
+        output = render_chain_text(tree)
+        assert claim.record_id in output
+        assert ev.record_id in output
+        assert "└── " in output  # child marker rendered
+        assert "(leaf — no derived_from)" in output
+
+
+# --- verify_receipts ----------------------------------------------------------
+
+
+def test_verify_receipts_clean_store(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        store.write_record(payload={"a": 1}, record_type="evidence")
+        store.write_record(payload={"a": 2}, record_type="evidence")
+        report = verify_receipts(store)
+        assert report.clean
+        assert report.store_records == 2
+        assert report.receipts == 2
+        assert report.missing_receipts == []
+        assert report.orphan_receipts == []
+        assert report.mismatched == []
+
+
+def test_verify_receipts_detects_record_without_receipt(tmp_path: Path) -> None:
+    # Write one record, then write a second directly to SQLite (bypassing the
+    # receipt log) to simulate a tampered store.
+    store = ProvenanceStore(tmp_path)
+    store.write_record(payload={"a": 1}, record_type="evidence")
+
+    store._conn.execute(
+        "INSERT INTO provenance_records VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "sha256:" + "f" * 64,
+            "evidence",
+            "ff/ff/ffff.json",
+            "[]",
+            None,
+            None,
+            None,
+            None,
+            "2026-04-20T00:00:00+00:00",
+            "{}",
+        ),
+    )
+    store._conn.commit()
+
+    report = verify_receipts(store)
+    assert not report.clean
+    assert "sha256:" + "f" * 64 in report.missing_receipts
+    store.close()
+
+
+def test_verify_receipts_detects_orphan_receipt(tmp_path: Path) -> None:
+    # Write a legit record, then manually append a stray receipt whose
+    # record_id isn't in the store.
+    store = ProvenanceStore(tmp_path)
+    store.write_record(payload={"a": 1}, record_type="evidence")
+
+    stray = {
+        "ts": "2026-04-20T00:00:00+00:00",
+        "record_id": "sha256:" + "1" * 64,
+        "record_type": "evidence",
+        "derived_from": [],
+        "primitive": None,
+        "agent": None,
+        "model": None,
+        "prompt_hash": None,
+    }
+    with open(store.receipts.path, "a", encoding="utf-8") as f:
+        f.write(json.dumps(stray) + "\n")
+
+    report = verify_receipts(store)
+    assert not report.clean
+    assert "sha256:" + "1" * 64 in report.orphan_receipts
+    store.close()

@@ -44,7 +44,6 @@ def test_agent_subtree_lists_three_agents() -> None:
         ["agent", "gap"],
         ["agent", "document", "--ksi", "KSI-SVC-SNT"],
         ["agent", "remediate", "--ksi", "KSI-SVC-SNT"],
-        ["provenance", "show", "deadbeef"],
         ["mcp", "serve"],
     ],
     ids=lambda args: " ".join(args),
@@ -55,6 +54,15 @@ def test_subcommand_stubs_raise_not_implemented(args: list[str]) -> None:
     assert isinstance(result.exception, NotImplementedError)
     # The stub message should name the phase so the user knows what's coming.
     assert "Phase" in str(result.exception)
+
+
+def test_provenance_show_missing_efterlev_dir_prints_error(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    # tmp_path has no `.efterlev/` — the CLI should error cleanly, not explode.
+    result = runner.invoke(app, ["provenance", "show", "sha256:abc", "--target", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "no `.efterlev/` directory" in result.output
 
 
 def test_remediate_requires_ksi_option() -> None:
