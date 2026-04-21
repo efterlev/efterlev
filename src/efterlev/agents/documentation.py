@@ -30,7 +30,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from efterlev.agents.base import Agent, format_evidence_for_prompt, parse_evidence_fence_ids
 from efterlev.agents.gap import KsiClassification
 from efterlev.errors import AgentError
-from efterlev.llm import DEFAULT_MODEL, LLMClient
+from efterlev.llm import LLMClient
 from efterlev.models import AttestationDraft, Claim, Evidence, Indicator
 from efterlev.primitives.generate import GenerateFrmrSkeletonInput, generate_frmr_skeleton
 from efterlev.provenance.context import get_active_store
@@ -77,17 +77,26 @@ class DocumentationReport(BaseModel):
 
 
 class DocumentationAgent(Agent):
-    """Narrative-synthesis agent for FRMR-style KSI attestations."""
+    """Narrative-synthesis agent for FRMR-style KSI attestations.
+
+    Defaults to Sonnet 4.6 rather than Opus 4.7: the job is structured
+    extractive writing against a tight format contract, not novel reasoning.
+    Sonnet handles that at roughly 1/5th the cost per token with essentially
+    no quality delta — 60 narratives per govnotes run drops from ~$4 to
+    ~$1. Callers who want to force Opus (or Haiku for bulk drafts) can pass
+    `model=...` explicitly.
+    """
 
     name = "documentation_agent@0.1.0"
     system_prompt_path = "documentation_prompt.md"
     output_model = NarrativeOutput
+    default_model = "claude-sonnet-4-6"
 
     def __init__(
         self,
         *,
         client: LLMClient | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         super().__init__(client=client, model=model)
 

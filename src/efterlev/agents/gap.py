@@ -29,7 +29,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from efterlev.agents.base import Agent, format_evidence_for_prompt, parse_evidence_fence_ids
 from efterlev.errors import AgentError
-from efterlev.llm import DEFAULT_MODEL, LLMClient
+from efterlev.llm import LLMClient
 from efterlev.models import Claim, Evidence, Indicator
 from efterlev.provenance.context import get_active_store
 
@@ -84,17 +84,24 @@ class GapReport(BaseModel):
 
 
 class GapAgent(Agent):
-    """LLM-backed KSI classifier, grounded in deterministic scanner evidence."""
+    """LLM-backed KSI classifier, grounded in deterministic scanner evidence.
+
+    Uses Opus 4.7 by default — the classifier makes judgment calls about
+    ambiguous/missing-evidence cases and must resist borrowing evidence from
+    unrelated KSIs. Those are Opus-grade reasoning requirements; cheaper
+    models drift on the honesty discipline.
+    """
 
     name = "gap_agent@0.1.0"
     system_prompt_path = "gap_prompt.md"
     output_model = GapReport
+    default_model = "claude-opus-4-7"
 
     def __init__(
         self,
         *,
         client: LLMClient | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         super().__init__(client=client, model=model)
 

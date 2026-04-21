@@ -153,19 +153,29 @@ class Agent(ABC):
     name: str = ""
     system_prompt_path: str = ""
     output_model: type[BaseModel]
+    # Per-agent default model. Subclasses override when their workload doesn't
+    # need the full Opus reasoning budget — Documentation Agent uses Sonnet
+    # because its job is structured extractive writing with tight format
+    # compliance, not novel reasoning. Fallback is the package-wide
+    # DEFAULT_MODEL so agents that don't override pick up future changes to
+    # the global default.
+    default_model: str | None = None
 
     def __init__(
         self,
         *,
         client: LLMClient | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         if not self.name:
             raise AgentError(f"{type(self).__name__}: `name` class var is required")
         if not self.system_prompt_path:
             raise AgentError(f"{type(self).__name__}: `system_prompt_path` class var is required")
         self.client: LLMClient = client or get_default_client()
-        self.model = model
+        # Resolution order: explicit model arg > subclass default_model >
+        # package DEFAULT_MODEL. A caller who explicitly passes a model
+        # always wins; subclasses set the sensible default for their task.
+        self.model = model or self.default_model or DEFAULT_MODEL
 
     def _load_system_prompt(self) -> str:
         """Resolve `system_prompt_path` against the subclass's module directory."""

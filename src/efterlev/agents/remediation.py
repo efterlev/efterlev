@@ -38,7 +38,7 @@ from efterlev.agents.base import (
 )
 from efterlev.agents.gap import KsiClassification
 from efterlev.errors import AgentError
-from efterlev.llm import DEFAULT_MODEL, LLMClient
+from efterlev.llm import LLMClient
 from efterlev.models import Claim, Evidence, Indicator
 from efterlev.provenance.context import get_active_store
 
@@ -84,17 +84,24 @@ class RemediationProposal(BaseModel):
 
 
 class RemediationAgent(Agent):
-    """LLM-backed Terraform-diff proposer for a single KSI gap."""
+    """LLM-backed Terraform-diff proposer for a single KSI gap.
+
+    Uses Opus 4.7 by default — producing a syntactically valid Terraform
+    diff grounded in real source, with scope-naming discipline ("this fixes
+    X; does not cover Y which is procedural"), is code-generation +
+    architectural-judgment work. Cheaper models drift on both.
+    """
 
     name = "remediation_agent@0.1.0"
     system_prompt_path = "remediation_prompt.md"
     output_model = RemediationOutput
+    default_model = "claude-opus-4-7"
 
     def __init__(
         self,
         *,
         client: LLMClient | None = None,
-        model: str = DEFAULT_MODEL,
+        model: str | None = None,
     ) -> None:
         super().__init__(client=client, model=model)
 
