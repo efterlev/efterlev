@@ -684,6 +684,50 @@ These came out of the review and need explicit decisions, not just implementatio
 
 ---
 
+## 2026-04-22 — Phase 2: FRMR-attestation generator + schema-posture call `[architecture]` `[output-format]` `[phase-2]`
+
+**Context.** The v1 brief's Phase 2 commits to a `generate_frmr_attestation` primitive that "serializes `AttestationDraft(mode=agent_drafted)` to FRMR-compatible JSON, validated against `FedRAMP.schema.json`." Implementing this surfaced a schema reality the brief was optimistic about: `catalogs/frmr/FedRAMP.schema.json` describes the FRMR *catalog* (the document listing what KSIs exist), not attestation *output* (a CSP's statement that they have evidence for those KSIs). FedRAMP has not published an attestation-output schema as of April 2026. This entry resolves how Phase 2 ships in that landscape.
+
+**Decision (six interlocking sub-decisions):**
+
+1. **`generate_frmr_attestation` lives as a standalone `@primitive(capability="generate", deterministic=True)`.** It takes a list of `AttestationDraft` (any mode) plus the loaded indicator catalog and baseline metadata, and emits a typed `AttestationArtifact`. This reopens DECISIONS 2026-04-21 "Documentation Agent composition scope" — the Phase 1 v0 entry deferred this primitive on the argument that composition was ~10 lines with one caller. Phase 2's case for promoting it: the artifact (one JSON file covering many KSIs) is the v1 primary production output; it must be reachable independently by MCP consumers, CI pipelines, and skeleton-only users; a future batch rebuild against a new FRMR version lands cleanly here as a pure deterministic transform. The agent's per-KSI narrative composition stays in `DocumentationAgent.run` — different abstraction level.
+2. **The artifact is FRMR-shape-inspired, not a valid FRMR catalog document.** Top-level keys parallel FRMR (`info`, `KSI` keyed by theme, with theme containers holding `indicators`), but the indicator records carry attestation data (status, mode, narrative, citations, claim_record_id) that the FRMR catalog schema rejects under `additionalProperties: false`. We do not pretend our output is a valid FRMR file; we model it on FRMR's conventions for legibility.
+3. **Validation is Pydantic structural validation at construction time, not jsonschema.** `AttestationArtifact` and its sub-models use `extra="forbid"` and strict `Literal` types. A malformed artifact raises `ValidationError` before serialization. An external `catalogs/efterlev/efterlev-attestation.schema.json` (Draft 2020-12 mirror of the Pydantic models, for non-Python consumers) is a Phase 2 follow-up, not blocking. CLAUDE.md's "validate against `FedRAMP.schema.json`" language was written before the schema-mismatch was understood; the next CLAUDE.md edit cycle will reframe it as "validate output before return," with the specific schema named per generator.
+4. **Drafts whose KSI is unknown to the loaded catalog are skipped, reported in `skipped_unknown_ksi`, never fabricated.** Same posture as the Phase 1 manifest loader: we do not invent theme attributions or KSI mappings. A draft for `KSI-XXX-YYY` that's not in the indicator dict is a configuration mismatch the caller must resolve, not an error to silently swallow.
+5. **`provenance.requires_review = True` is invariant.** Encoded as a `Literal[True]` on `AttestationArtifactProvenance` — not a default, a constraint. Pydantic raises if any caller tries to construct one with `requires_review=False`. Per CLAUDE.md Principle 7, Efterlev never produces a "final, no-review-needed" attestation. When the Phase 5 review-workflow lands, `reviewed_by` and `approved_by` are *additive* fields recording reviewer trail; `requires_review` stays True because that is what the tool guarantees, not what a reviewer guarantees about their own work.
+6. **Canonical JSON output (sorted keys, indent=2, UTF-8, newline-terminated).** Required for content-addressable audit trails, byte-stable diff workflows (Phase 4 drift), and reproducibility. The primitive returns both the typed `AttestationArtifact` and the serialized `artifact_json` string so callers don't re-serialize and risk drift.
+
+**Rationale:**
+
+- A standalone primitive is the right shape for an output artifact that's the v1 *production* deliverable: it gets MCP-exposed, CI-invokable, deterministic, and re-runnable. Keeping composition in the agent (one-KSI narrative drafting) and serialization in the primitive (whole-baseline artifact assembly) cleanly separates LLM-bearing work from deterministic transformation.
+- Pretending the output is a valid FRMR catalog file would be the worse failure mode — a 3PAO who validated our output against `FedRAMP.schema.json` would see it fail and lose trust. Naming the difference honestly preserves the "evidence vs claims" discipline at the schema layer.
+- Pydantic structural validation is the right level of guarantee for the v1 internal use case (Documentation Agent → primitive → file). External consumers who can't run our Pydantic get a mirrored JSON Schema in the follow-up; that's where the cost-benefit favors investment.
+- The `requires_review=True` invariant prevents a class of regression where a reviewer-added flag accidentally implies reviewer-removed need-to-review. Lock it at the type level so the property can't be lost without an explicit DECISIONS entry overriding this one.
+
+**Alternatives rejected:**
+
+- **Validate against `FedRAMP.schema.json` directly.** Rejected — the schema describes the catalog, not the attestation. Validating our attestation against it would either fail (additional fields rejected) or require us to drop our attestation data to make the file pass (defeating the point).
+- **Define our schema as a one-off JSON file now and validate inside the primitive at v1 Phase 2.** Considered. Adds ~100 lines of JSON Schema authoring and a jsonschema validator call. Pydantic gets us the same structural guarantee for internal use; the external schema is a publication concern (consumers who can't run our Python) that we add when a real consumer asks. Defer.
+- **Make the primitive generative (deterministic=False).** Rejected. There's no LLM call inside; the LLM work happened upstream in the Documentation Agent. Marking it generative would (a) misclassify the trust posture and (b) put it on the wrong side of the Evidence/Claims line — the artifact assembly is deterministic transformation of pre-existing Claims, not new Claim creation.
+- **Hold drafts and serialize in the agent (status quo from 2026-04-21).** Rejected. Reopens that entry's call: Phase 2 changes the cost-benefit because the artifact is the v1 *primary output*, and external consumers (MCP agents, CI scripts, future batch rebuilds) need it without going through the agent's LLM call.
+- **One primitive call per KSI, like `generate_frmr_skeleton`.** Rejected. The artifact is one file covering the whole baseline; per-KSI calls would require a separate concat step and produce per-KSI provenance records that don't reflect the unit of value (the artifact). One call = one artifact = one provenance record.
+
+**Implementation landed in this commit:**
+
+- `src/efterlev/models/attestation_artifact.py` — `AttestationArtifact`, `AttestationArtifactInfo`, `AttestationArtifactIndicator`, `AttestationArtifactTheme`, `AttestationArtifactProvenance`. All `extra="forbid"`; `requires_review` is `Literal[True]`.
+- `src/efterlev/primitives/generate/generate_frmr_attestation.py` — the primitive.
+- `src/efterlev/cli/main.py` — `efterlev agent document` writes `attestation-<ts>.json` alongside the existing HTML report; CLI prints the artifact path, indicator count, and any skipped unknown KSIs.
+- 11 new tests (`tests/test_generate_frmr_attestation.py`). 266 total pass; ruff/mypy clean.
+
+**Deferred from this commit:**
+
+- External `catalogs/efterlev/efterlev-attestation.schema.json` mirror for non-Python consumers (Phase 2 follow-up, gated on consumer demand).
+- HTML report linking the FRMR JSON path inline so reviewers can grab the machine-readable file directly from the human report (small follow-up; current CLI lists both paths).
+- CLAUDE.md edit cycle reframing "validated against `FedRAMP.schema.json`" as "validated against the appropriate schema per generator" (next doc-pass commit).
+- Reading the artifact back via a `validate_frmr_attestation` primitive — Pydantic already validates on construction; a separate validator helps only when reading external/edited JSON, which is not yet a workflow.
+
+---
+
 
 
 ```

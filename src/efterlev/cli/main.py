@@ -376,6 +376,10 @@ def agent_document(
         skipped = ", ".join(report.skipped_ksi_ids)
         typer.echo(f"Skipped {len(report.skipped_ksi_ids)} KSI(s): {skipped}")
 
+    from efterlev.primitives.generate import (
+        GenerateFrmrAttestationInput,
+        generate_frmr_attestation,
+    )
     from efterlev.reports import render_documentation_report_html
 
     html_body = render_documentation_report_html(
@@ -390,6 +394,35 @@ def agent_document(
     html_path.write_text(html_body, encoding="utf-8")
     typer.echo("")
     typer.echo(f"HTML report: {html_path}")
+
+    # FRMR-compatible attestation JSON — the v1 Phase 2 primary production
+    # output. Emit alongside the HTML so a single run of `agent document`
+    # produces both the human-readable report and the machine-readable
+    # artifact for downstream consumers.
+    attestation_drafts = [att.draft for att in report.attestations]
+    claim_record_ids = {
+        att.draft.ksi_id: att.claim_record_id
+        for att in report.attestations
+        if att.claim_record_id is not None
+    }
+    with ProvenanceStore(root) as store, active_store(store):
+        attestation_result = generate_frmr_attestation(
+            GenerateFrmrAttestationInput(
+                drafts=attestation_drafts,
+                indicators=frmr_doc.indicators,
+                baseline_id="fedramp-20x-moderate",
+                frmr_version=frmr_doc.version,
+                frmr_last_updated=frmr_doc.last_updated,
+                claim_record_ids=claim_record_ids,
+            )
+        )
+    attestation_path = reports_dir / f"attestation-{timestamp}.json"
+    attestation_path.write_text(attestation_result.artifact_json, encoding="utf-8")
+    typer.echo(f"FRMR attestation: {attestation_path}")
+    typer.echo(f"  indicators:       {attestation_result.indicator_count}")
+    if attestation_result.skipped_unknown_ksi:
+        skipped = ", ".join(sorted(set(attestation_result.skipped_unknown_ksi)))
+        typer.echo(f"  skipped unknown:  {skipped}")
 
 
 @agent_app.command("remediate")

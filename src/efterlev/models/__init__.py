@@ -13,6 +13,13 @@ per DECISIONS 2026-04-21 design call #2.
 
 from __future__ import annotations
 
+from efterlev.models.attestation_artifact import (
+    AttestationArtifact,
+    AttestationArtifactIndicator,
+    AttestationArtifactInfo,
+    AttestationArtifactProvenance,
+    AttestationArtifactTheme,
+)
 from efterlev.models.attestation_draft import (
     AttestationCitation,
     AttestationDraft,
@@ -29,6 +36,11 @@ from efterlev.models.source import TerraformResource
 from efterlev.models.source_ref import SourceRef
 
 __all__ = [
+    "AttestationArtifact",
+    "AttestationArtifactIndicator",
+    "AttestationArtifactInfo",
+    "AttestationArtifactProvenance",
+    "AttestationArtifactTheme",
     "AttestationCitation",
     "AttestationDraft",
     "AttestationMode",

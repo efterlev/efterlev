@@ -9,6 +9,11 @@ involvement (DECISIONS 2026-04-21 design call #2).
 
 from __future__ import annotations
 
+from efterlev.primitives.generate.generate_frmr_attestation import (
+    GenerateFrmrAttestationInput,
+    GenerateFrmrAttestationOutput,
+    generate_frmr_attestation,
+)
 from efterlev.primitives.generate.generate_frmr_skeleton import (
     GenerateFrmrSkeletonInput,
     GenerateFrmrSkeletonOutput,
@@ -16,7 +21,10 @@ from efterlev.primitives.generate.generate_frmr_skeleton import (
 )
 
 __all__ = [
+    "GenerateFrmrAttestationInput",
+    "GenerateFrmrAttestationOutput",
     "GenerateFrmrSkeletonInput",
     "GenerateFrmrSkeletonOutput",
+    "generate_frmr_attestation",
     "generate_frmr_skeleton",
 ]
