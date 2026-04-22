@@ -409,14 +409,24 @@ def _evaluate(
         )
     )
 
-    statuses = {clf.get("status") for clf in classifications}
+    # "Differentiates" = the model is making distinctions between KSIs, not
+    # classifying every one identically. We do NOT require `implemented` to
+    # appear — from infra-only Terraform evidence, a cautious model correctly
+    # refuses to call anything fully `implemented` (procedural / operational
+    # layers remain unverified). That cautious posture is principle 1
+    # "Evidence before claims" in CLAUDE.md, so penalizing it here would
+    # pressure the model in exactly the direction the product commits NOT to
+    # go. Two distinct statuses is the honest floor.
+    statuses: set[str] = {
+        str(clf["status"]) for clf in classifications if clf.get("status")
+    }
     checks.append(
         _check(
             stage="03-agent-gap",
             name="differentiates",
             severity="critical",
-            passed=("implemented" in statuses and "not_implemented" in statuses),
-            detail=f"observed statuses: {sorted(s for s in statuses if s)}",
+            passed=len(statuses) >= 2,
+            detail=f"observed {len(statuses)} distinct status(es): {sorted(statuses)}",
         )
     )
 
