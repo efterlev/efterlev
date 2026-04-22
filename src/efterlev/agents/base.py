@@ -1,21 +1,30 @@
 """Shared agent scaffolding: evidence fencing, prompt loading, base class.
 
-Three things live here:
+Four things live here:
 
-  1. `format_evidence_for_prompt(evidence)` — the *only* way agents should
-     embed Evidence content into a prompt. Each record is wrapped in an
-     `<evidence id="sha256:...">...</evidence>` fence per DECISIONS
-     2026-04-21 design call #3. No agent assembles prompts by hand.
-     `format_source_files_for_prompt(source_files)` is the analogous
-     helper for raw `.tf` file content — same trust model, different fence
-     tag, separate parse helper.
+  1. `new_fence_nonce()` — generates a per-run random hex nonce. Agents
+     create one nonce at the top of a `run()` call and pass it to every
+     fence format/parse operation in that call. The nonce is what
+     prevents adversarial content from forging closing tags to break
+     out of a fence (DECISIONS 2026-04-22 Phase 2 post-review fixup F,
+     hardening design call #3 from 2026-04-21).
 
-  2. `parse_evidence_fence_ids(prompt)` / `parse_source_file_fence_paths(prompt)`
-     — recover the set of fence IDs/paths actually present in a prompt, used
-     by post-generation validators to confirm every cited ID or path maps to
-     a real fence.
+  2. `format_evidence_for_prompt(evidence, nonce=…)` — the *only* way
+     agents should embed Evidence content into a prompt. Each record is
+     wrapped in an `<evidence_NONCE id="sha256:...">...</evidence_NONCE>`
+     fence. `format_source_files_for_prompt(source_files, nonce=…)` is
+     the analogous helper for raw `.tf` file content — same nonce, same
+     trust model, different fence tag name so the validator can enforce
+     citation rules separately per class.
 
-  3. `Agent` — abstract base. Subclasses declare `name`, `system_prompt_path`,
+  3. `parse_evidence_fence_ids(prompt, nonce=…)` /
+     `parse_source_file_fence_paths(prompt, nonce=…)` — recover the set
+     of fence IDs/paths actually present in a prompt with the caller's
+     nonce. Used by post-generation validators to confirm every cited
+     ID or path maps to a real fence; content-injected fences with any
+     other nonce are ignored.
+
+  4. `Agent` — abstract base. Subclasses declare `name`, `system_prompt_path`,
      and an `output_model` pydantic class; `Agent._invoke_llm(...)` loads the
      prompt, calls the LLM via the injected client, parses + validates the
      response, and emits a provenance record for the model invocation.
@@ -32,6 +41,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import secrets
 from abc import ABC
 from pathlib import Path
 
@@ -45,22 +55,41 @@ from efterlev.provenance.context import get_active_store
 log = logging.getLogger(__name__)
 
 
-_EVIDENCE_FENCE_RE = re.compile(r'<evidence id="([^"]+)">')
-_SOURCE_FILE_FENCE_RE = re.compile(r'<source_file path="([^"]+)">')
+def new_fence_nonce() -> str:
+    """Return a fresh random nonce for a single agent run's fence set.
+
+    The nonce is a 32-bit hex string generated via `secrets.token_hex(4)` —
+    cryptographically random, unpredictable at evidence-authoring time,
+    cheap to embed in tag names. Eight hex chars is enough entropy that an
+    adversarial content author cannot guess the nonce and embed a matching
+    closing tag to break out of the fence.
+
+    Callers generate ONE nonce at the top of an agent run and pass it to
+    every `format_*_for_prompt` / `parse_*_fence_*` call in that run. All
+    legitimate fences in a single prompt share the same nonce; content
+    cannot forge fences because it does not know the nonce.
+    """
+    return secrets.token_hex(4)
 
 
-def format_evidence_for_prompt(evidence: list[Evidence]) -> str:
-    """Return a prompt fragment wrapping each Evidence in an XML fence.
+def format_evidence_for_prompt(evidence: list[Evidence], *, nonce: str) -> str:
+    """Return a prompt fragment wrapping each Evidence in a nonced XML fence.
 
-    Fence format: `<evidence id="<evidence_id>">` + the JSON-serialized content
-    dict + `</evidence>`. The `evidence_id` already carries the `sha256:`
-    prefix (see `models._hashing.compute_content_id`), so the rendered fence
-    looks like `<evidence id="sha256:abc…">` and matches the provenance
-    record_id format exactly. An LLM that cites the fence id is citing a
-    provenance-walkable id directly, no prefix translation at the boundary.
+    Fence format: `<evidence_NONCE id="<evidence_id>">` + JSON-serialized
+    content + `</evidence_NONCE>`. The `evidence_id` already carries the
+    `sha256:` prefix (see `models._hashing.compute_content_id`), so the
+    rendered fence id matches the provenance record_id format exactly.
 
-    Records are emitted in input order; the downstream validator parses IDs
-    by regex and only cares about uniqueness.
+    Why the nonce: without it, an adversarial input whose content contains
+    `</evidence>` could break out of its fenced region and inject fake
+    fences. With a fresh random nonce per call, content-authored strings
+    cannot forge a matching closing tag or an alternative opening tag for
+    a fabricated evidence id — the attacker would have to predict 32 bits
+    of entropy at authoring time.
+
+    Callers get the nonce from `new_fence_nonce()` and pass it to both this
+    function and the matching `parse_evidence_fence_ids(nonce=...)` call
+    that validates the model's output. Records are emitted in input order.
     """
     if not evidence:
         return "(no evidence records)"
@@ -75,50 +104,54 @@ def format_evidence_for_prompt(evidence: list[Evidence]) -> str:
             "content": ev.content,
         }
         body = json.dumps(payload, sort_keys=True, indent=2)
-        blocks.append(f'<evidence id="{ev.evidence_id}">\n{body}\n</evidence>')
+        blocks.append(f'<evidence_{nonce} id="{ev.evidence_id}">\n{body}\n</evidence_{nonce}>')
     return "\n\n".join(blocks)
 
 
-def parse_evidence_fence_ids(prompt: str) -> set[str]:
-    """Recover every `<evidence id="...">` id present in a prompt.
+def parse_evidence_fence_ids(prompt: str, *, nonce: str) -> set[str]:
+    """Recover every `<evidence_NONCE id="...">` id present in a prompt.
 
-    Returns the set of fence id attributes (with `sha256:` prefix preserved).
-    Used by the post-generation validator to enforce "cited IDs must appear
-    as fences." Not order-preserving — set semantics are sufficient.
+    Only matches fences whose nonce equals the caller-provided one — so
+    content-injected fences with random or attacker-chosen nonces are
+    ignored. Returns the set of fence id attributes (with `sha256:` prefix
+    preserved). Used by the post-generation validator to enforce "cited
+    IDs must appear as legitimately-fenced records."
     """
-    return set(_EVIDENCE_FENCE_RE.findall(prompt))
+    pattern = re.compile(rf'<evidence_{re.escape(nonce)} id="([^"]+)">')
+    return set(pattern.findall(prompt))
 
 
-def format_source_files_for_prompt(source_files: dict[str, str]) -> str:
-    """Return a prompt fragment wrapping each `.tf` source file in an XML fence.
+def format_source_files_for_prompt(source_files: dict[str, str], *, nonce: str) -> str:
+    """Return a prompt fragment wrapping each `.tf` file in a nonced XML fence.
 
-    Fence format: `<source_file path="<path>">` + raw file content +
-    `</source_file>`. The Remediation Agent needs the full source text to
-    produce a valid unified diff, but `.tf` comments are attacker-controllable
-    just like Evidence content — same trust model, different fence tag so
-    the validator can enforce "model may only cite paths it was shown" in
-    the same way it enforces evidence ids.
+    Fence format: `<source_file_NONCE path="<path>">` + raw Terraform +
+    `</source_file_NONCE>`. The Remediation Agent needs the full source text
+    to produce a valid unified diff, but `.tf` comments are attacker-
+    controllable just like Evidence content — a hostile module comment
+    could literally contain `</source_file>` to break out of the fence.
+    The nonce makes that impossible: the attacker would have to predict
+    32 bits of entropy at the time they wrote the comment.
 
-    The content is embedded verbatim (no JSON escaping): the model reads it
-    as Terraform, not as a JSON payload, and the `</source_file>` terminator
-    is unambiguous because `.tf` syntax never produces that string.
+    The content is embedded verbatim (no JSON escaping): the model reads
+    it as Terraform, not as a JSON payload.
     """
     if not source_files:
         return "(no source files)"
 
     blocks: list[str] = []
     for path, content in source_files.items():
-        blocks.append(f'<source_file path="{path}">\n{content}\n</source_file>')
+        blocks.append(f'<source_file_{nonce} path="{path}">\n{content}\n</source_file_{nonce}>')
     return "\n\n".join(blocks)
 
 
-def parse_source_file_fence_paths(prompt: str) -> set[str]:
-    """Recover every `<source_file path="...">` path present in a prompt.
+def parse_source_file_fence_paths(prompt: str, *, nonce: str) -> set[str]:
+    """Recover every `<source_file_NONCE path="...">` path present in a prompt.
 
-    Set semantics — the Remediation Agent's post-generation validator just
-    needs to enforce "cited paths must appear as fences."
+    Same nonce-gated discipline as `parse_evidence_fence_ids`. Returns
+    only paths from fences opened with the expected nonce.
     """
-    return set(_SOURCE_FILE_FENCE_RE.findall(prompt))
+    pattern = re.compile(rf'<source_file_{re.escape(nonce)} path="([^"]+)">')
+    return set(pattern.findall(prompt))
 
 
 class Agent(ABC):

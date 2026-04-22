@@ -728,6 +728,39 @@ These came out of the review and need explicit decisions, not just implementatio
 
 ---
 
+## 2026-04-22 — Post-review fixups A–F: tightenings from the deep-dive `[process]` `[architecture]` `[security]`
+
+**Context.** Right after Phase 2 landed, a deep-dive review surfaced 14 findings across three severity tiers: small tightenings (3), integration gaps (3), doc inconsistencies (3), pre-existing concerns (2), and polish (3). This entry consolidates the fix commits (A–F on the `claude/review-github-access-6XZIA` branch) for the audit trail. No reversals of prior decisions; every fix tightens an invariant that was under-specified or under-enforced.
+
+**A — small fixups.** `generate_frmr_attestation` catches `pydantic.ValidationError` specifically instead of bare `Exception`; docstring explains the determinism model (`generated_at` is part of the input). `load_evidence_manifests` and `generate_frmr_attestation` dedupe `skipped_unknown_ksi` at the primitive boundary. CLI `scan` hard-errors on missing FRMR cache (previously silently skipped every manifest as "unknown KSI"). CLI `agent document` consolidates two `ProvenanceStore` contexts into one so the agent and generator share an active-store scope. CLAUDE.md schema-posture language refreshed; the "deferred to v1+" list reframed as deferred *detectors* with manifests as the procedural complement. Test import path tightened.
+
+**B — dual_horizon_plan.md §3.1 Layer 2 rewrite.** Replaces the pre-v0 month-by-month targets with the v1 locked plan from 2026-04-22 "Lock v1 scope" — OSCAL to v1.5+, Bedrock to month 3–4 gated, Phase 4 (drift) pulled to month 2, Phase 6 (detector breadth) parallel with drift. Four locked commitments now visible inline so contributors reading the plan see the same scope as DECISIONS.
+
+**C — Remediation Agent manifest discrimination.** The CLI was loading manifest YAML files as Terraform source and feeding them to the agent. A KSI classified `partial` with only manifest evidence would produce nonsense diffs against a .yml file. Filter `detector_id == "manifest"` out of the `source_files` assembly. Manifest Evidence still flows into the agent's prompt (so the agent can reason "this KSI has attestations + a Terraform gap"); we just don't pass YAML as source. When ALL Evidence for the target KSI is manifest-sourced, short-circuit with a clean "no Terraform surface to remediate" message before invoking the LLM. New test locks in the short-circuit path.
+
+**D — `Evidence.source_ref.file` is repo-relative, not absolute.** Evidence records stored absolute filesystem paths (e.g. `/home/alice/projects/mycompany-fedramp/infra/main.tf`), which leaked into the provenance store, HTML reports, and — post-Phase-2 — the FRMR attestation JSON shipped to 3PAOs. Fix: `parse_terraform_tree` computes paths relative to `target_dir` and passes them via the new `record_as` kwarg on `parse_terraform_file`. `LoadEvidenceManifestsInput` gains a required `scan_root: Path` field; the primitive relativizes each manifest path against it. Readers (Remediation CLI, MCP tool) use `paths.resolve_within_root(rel, root)` which handles relative and absolute candidates uniformly — no reader change needed. Manifests outside scan_root fall back to raw paths with a log warning (misuse path). `paths.py` docstring updated: detectors and manifest loader now produce relative paths by contract.
+
+**E — Gap + Remediation reports carry manifest badges.** Phase 1 polish added the `attestation` badge only to the Documentation Report; Gap and Remediation rendered citations as opaque sha256 strings. Both renderers gain an optional `evidence=` kwarg. When passed, they build a `{evidence_id: detector_id}` index and emit the same amber `attestation` badge next to manifest-sourced citations. Scanner-derived citations stay unbadged (the default). The badge CSS moves from per-report injection to the shared `RECORDS_STYLESHEET` in `reports/html.py` for one source of truth. Back-compat: callers that don't pass `evidence=` still work.
+
+**F — Fence-boundary hardening via per-run nonce.** `format_evidence_for_prompt` wrapped records in `<evidence id="...">...</evidence>` without escaping `</evidence>` in content. A manifest statement containing `</evidence><evidence id="sha256:fake">...` could in principle break fence boundaries and inject fence IDs that pass the post-generation citation validator. Same concern for `format_source_files_for_prompt` with Terraform comments containing `</source_file>`. Fix: add `new_fence_nonce()` (32-bit hex, `secrets.token_hex(4)`). Agents generate ONE nonce per `run()` call and pass it to every format/parse. Fence format becomes `<evidence_NONCE id="...">...</evidence_NONCE>` and `<source_file_NONCE path="...">...</source_file_NONCE>`. Content cannot forge matching tags because it does not know the nonce. Parse functions take the nonce and match only legitimately-nonced fences; fences with any other nonce (including content-injected ones) are ignored. System prompts (`gap_prompt.md`, `documentation_prompt.md`, `remediation_prompt.md`) updated to describe the NONCE suffix and instruct the model to recognize any `<evidence_...>` or `<source_file_...>` tag as a fence. New adversarial test simulates an attacker trying to embed a fake fence with a guessed nonce; the parser correctly rejects it.
+
+**Scope boundary for this commit sequence:**
+
+- Every fix is additive or behavior-neutral. No existing decision is reversed. DECISIONS 2026-04-21 design call #3 (XML fencing) stands; fixup F strengthens its enforcement with per-run nonces.
+- Evidence-vs-Claims discipline (2026-04-18) unchanged. `Evidence.source_ref.file` is still a `Path`; only its semantic ("relative to scan root") was under-specified before and is now explicit.
+- Remediation short-circuit in C preserves the existing "no_terraform_fix" status semantics; it just prevents the agent from seeing YAML as source.
+- Fence-nonce change in F is a breaking API change to the four helpers (`format_*_for_prompt`, `parse_*_fence_*`). Agents and tests all updated in the same commit; no external consumers exist at v1 (closed-source).
+
+**Verification:**
+
+- 279 tests pass (was 266 pre-review pass). 13 new tests added across the six fixup commits covering the new behavior, short-circuits, and adversarial fence-injection.
+- Ruff + mypy clean across all 76 source files, strict on `efterlev.{primitives,detectors,oscal,manifests}.*`.
+- End-to-end smoke (`init` + `scan` against a temp repo with one .tf + one manifest) verified: store now records `file=main.tf` and `file=.efterlev/manifests/inbox.yml` — clean repo-relative paths, no `/tmp/...` prefix leaking into the artifact.
+
+**No deferred items from this review-and-fix pass.** Every finding resolved or noted as pre-existing concern out of scope (none were).
+
+---
+
 
 
 ```

@@ -33,6 +33,7 @@ from efterlev.agents.base import (
     Agent,
     format_evidence_for_prompt,
     format_source_files_for_prompt,
+    new_fence_nonce,
     parse_evidence_fence_ids,
     parse_source_file_fence_paths,
 )
@@ -106,8 +107,16 @@ class RemediationAgent(Agent):
         super().__init__(client=client, model=model)
 
     def run(self, input: RemediationAgentInput) -> RemediationProposal:
+        # One nonce for both evidence and source-file fences; shared
+        # validator uses it on both (DECISIONS 2026-04-22 Phase 2 post-
+        # review fixup F).
+        nonce = new_fence_nonce()
         user_message = _build_user_message(
-            input.indicator, input.classification, input.evidence, input.source_files
+            input.indicator,
+            input.classification,
+            input.evidence,
+            input.source_files,
+            nonce=nonce,
         )
         # Larger max_tokens than the other agents: a unified diff for a
         # multi-resource change plus a 100-300 word explanation can run
@@ -117,7 +126,7 @@ class RemediationAgent(Agent):
         )
         assert isinstance(output, RemediationOutput)
 
-        _validate_citations(output, fenced_prompt=system_prompt + "\n" + user_message)
+        _validate_citations(output, fenced_prompt=system_prompt + "\n" + user_message, nonce=nonce)
 
         status: RemediationStatus = "proposed" if output.diff.strip() else "no_terraform_fix"
 
@@ -166,12 +175,14 @@ def _build_user_message(
     classification: KsiClassification,
     evidence: list[Evidence],
     source_files: dict[str, str],
+    *,
+    nonce: str,
 ) -> str:
     """Assemble the per-KSI user message: KSI, classification, fenced ev + sources."""
     controls = ", ".join(indicator.controls) if indicator.controls else "(none in FRMR)"
     statement = indicator.statement or "(no statement in FRMR)"
-    fenced_evidence = format_evidence_for_prompt(evidence)
-    fenced_sources = format_source_files_for_prompt(source_files)
+    fenced_evidence = format_evidence_for_prompt(evidence, nonce=nonce)
+    fenced_sources = format_source_files_for_prompt(source_files, nonce=nonce)
 
     return (
         "Propose a Terraform remediation for the following KSI gap.\n\n"
@@ -192,10 +203,10 @@ def _build_user_message(
     )
 
 
-def _validate_citations(output: RemediationOutput, *, fenced_prompt: str) -> None:
+def _validate_citations(output: RemediationOutput, *, fenced_prompt: str, nonce: str) -> None:
     """Enforce design call #3: every cited id/path must correspond to a real fence."""
-    fenced_ids = parse_evidence_fence_ids(fenced_prompt)
-    fenced_paths = parse_source_file_fence_paths(fenced_prompt)
+    fenced_ids = parse_evidence_fence_ids(fenced_prompt, nonce=nonce)
+    fenced_paths = parse_source_file_fence_paths(fenced_prompt, nonce=nonce)
 
     cited_ids = set(output.cited_evidence_ids)
     cited_paths = set(output.cited_source_files)

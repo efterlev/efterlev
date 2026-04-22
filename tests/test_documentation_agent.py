@@ -132,7 +132,10 @@ def test_documentation_agent_prompt_carries_ksi_classification_and_fenced_eviden
     user = stub.last_messages[0].content
     assert "KSI-SVC-VRI" in user
     assert '"status": "partial"' in user
-    assert f'<evidence id="{ev.evidence_id}">' in user
+    # Nonce is random per run; match with a regex (Phase 2 post-review fixup F).
+    import re
+
+    assert re.search(rf'<evidence_[0-9a-f]+ id="{re.escape(ev.evidence_id)}">', user)
     # System prompt mentions the fence trust model.
     assert "untrusted data" in stub.last_system
 
@@ -301,7 +304,9 @@ def test_doc_agent_honors_cross_ksi_evidence_citations(tmp_path: Path) -> None:
 
     # The fenced evidence MUST appear in the prompt the Doc Agent sent.
     user = stub.last_messages[0].content
-    assert f'<evidence id="{cloudtrail_ev.evidence_id}">' in user
+    import re
+
+    assert re.search(rf'<evidence_[0-9a-f]+ id="{re.escape(cloudtrail_ev.evidence_id)}">', user)
 
 
 def test_doc_agent_empty_evidence_when_classification_cites_nothing(tmp_path: Path) -> None:

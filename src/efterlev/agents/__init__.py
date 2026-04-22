@@ -12,6 +12,7 @@ from efterlev.agents.base import (
     Agent,
     format_evidence_for_prompt,
     format_source_files_for_prompt,
+    new_fence_nonce,
     parse_evidence_fence_ids,
     parse_source_file_fence_paths,
 )
@@ -55,6 +56,7 @@ __all__ = [
     "UnmappedFinding",
     "format_evidence_for_prompt",
     "format_source_files_for_prompt",
+    "new_fence_nonce",
     "parse_evidence_fence_ids",
     "parse_source_file_fence_paths",
     "reconstruct_classifications_from_store",

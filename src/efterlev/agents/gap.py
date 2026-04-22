@@ -27,7 +27,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from efterlev.agents.base import Agent, format_evidence_for_prompt, parse_evidence_fence_ids
+from efterlev.agents.base import (
+    Agent,
+    format_evidence_for_prompt,
+    new_fence_nonce,
+    parse_evidence_fence_ids,
+)
 from efterlev.errors import AgentError
 from efterlev.llm import LLMClient
 from efterlev.models import Claim, Evidence, Indicator
@@ -107,7 +112,13 @@ class GapAgent(Agent):
 
     def run(self, input: GapAgentInput) -> GapReport:
         mapped_evidence, unmapped_evidence = _split_mapped_unmapped(input.evidence)
-        user_message = _build_user_message(input.indicators, mapped_evidence, unmapped_evidence)
+        # One nonce per agent run; threaded through every fence and the
+        # post-generation validator so content-authored strings can't forge
+        # matching tags (DECISIONS 2026-04-22 Phase 2 post-review fixup F).
+        nonce = new_fence_nonce()
+        user_message = _build_user_message(
+            input.indicators, mapped_evidence, unmapped_evidence, nonce=nonce
+        )
 
         # 16384 to fit classifications for the full FedRAMP 20x baseline (60
         # KSIs as of FRMR 0.9.43-beta). The default 4096 truncates mid-JSON
@@ -117,7 +128,7 @@ class GapAgent(Agent):
         )
         assert isinstance(report, GapReport)  # type narrowing
 
-        _validate_cited_ids(report, fenced_prompt=system_prompt + "\n" + user_message)
+        _validate_cited_ids(report, fenced_prompt=system_prompt + "\n" + user_message, nonce=nonce)
 
         # Persist one Claim per KSI classification, linking back to the
         # evidence IDs the model cited. `cited_evidence_ids` are already in
@@ -172,6 +183,8 @@ def _build_user_message(
     indicators: list[Indicator],
     mapped_evidence: list[Evidence],
     unmapped_evidence: list[Evidence],
+    *,
+    nonce: str,
 ) -> str:
     """Assemble the single user message with fenced evidence blocks."""
     ksi_lines: list[str] = []
@@ -179,8 +192,8 @@ def _build_user_message(
         statement = ind.statement or "(no statement in FRMR)"
         ksi_lines.append(f"- {ind.id} — {ind.name}: {statement}")
 
-    fenced_mapped = format_evidence_for_prompt(mapped_evidence)
-    fenced_unmapped = format_evidence_for_prompt(unmapped_evidence)
+    fenced_mapped = format_evidence_for_prompt(mapped_evidence, nonce=nonce)
+    fenced_unmapped = format_evidence_for_prompt(unmapped_evidence, nonce=nonce)
 
     return (
         "Classify the following KSIs from the loaded FedRAMP 20x baseline.\n\n"
@@ -195,9 +208,9 @@ def _build_user_message(
     )
 
 
-def _validate_cited_ids(report: GapReport, *, fenced_prompt: str) -> None:
+def _validate_cited_ids(report: GapReport, *, fenced_prompt: str, nonce: str) -> None:
     """Enforce design call #3: every cited id must correspond to a real fence."""
-    fenced_ids = parse_evidence_fence_ids(fenced_prompt)
+    fenced_ids = parse_evidence_fence_ids(fenced_prompt, nonce=nonce)
     cited: set[str] = set()
     for clf in report.ksi_classifications:
         cited.update(clf.evidence_ids)

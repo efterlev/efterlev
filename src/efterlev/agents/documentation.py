@@ -27,7 +27,12 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from efterlev.agents.base import Agent, format_evidence_for_prompt, parse_evidence_fence_ids
+from efterlev.agents.base import (
+    Agent,
+    format_evidence_for_prompt,
+    new_fence_nonce,
+    parse_evidence_fence_ids,
+)
 from efterlev.agents.gap import KsiClassification
 from efterlev.errors import AgentError
 from efterlev.llm import LLMClient
@@ -136,11 +141,19 @@ class DocumentationAgent(Agent):
                 )
             )
 
-            user_message = _build_user_message(indicator, clf, ksi_evidence)
+            # Fresh nonce per KSI-draft LLM call — each invocation is its
+            # own fence set. See DECISIONS 2026-04-22 Phase 2 post-review
+            # fixup F.
+            nonce = new_fence_nonce()
+            user_message = _build_user_message(indicator, clf, ksi_evidence, nonce=nonce)
             narrative_output, response, system_prompt = self._invoke_llm(user_message=user_message)
             assert isinstance(narrative_output, NarrativeOutput)
 
-            _validate_cited_ids(narrative_output, fenced_prompt=system_prompt + "\n" + user_message)
+            _validate_cited_ids(
+                narrative_output,
+                fenced_prompt=system_prompt + "\n" + user_message,
+                nonce=nonce,
+            )
 
             final_draft = AttestationDraft(
                 ksi_id=clf.ksi_id,
@@ -214,11 +227,13 @@ def _build_user_message(
     indicator: Indicator,
     classification: KsiClassification,
     evidence: list[Evidence],
+    *,
+    nonce: str,
 ) -> str:
     """Assemble the per-KSI user message: KSI metadata, classification, fenced evidence."""
     controls = ", ".join(indicator.controls) if indicator.controls else "(none in FRMR)"
     statement = indicator.statement or "(no statement in FRMR)"
-    fenced = format_evidence_for_prompt(evidence)
+    fenced = format_evidence_for_prompt(evidence, nonce=nonce)
     classification_block = json.dumps(
         {
             "ksi_id": classification.ksi_id,
@@ -245,9 +260,9 @@ def _build_user_message(
     )
 
 
-def _validate_cited_ids(output: NarrativeOutput, *, fenced_prompt: str) -> None:
+def _validate_cited_ids(output: NarrativeOutput, *, fenced_prompt: str, nonce: str) -> None:
     """Enforce design call #3: every cited id must correspond to a real fence."""
-    fenced_ids = parse_evidence_fence_ids(fenced_prompt)
+    fenced_ids = parse_evidence_fence_ids(fenced_prompt, nonce=nonce)
     cited = set(output.cited_evidence_ids)
     fabricated = cited - fenced_ids
     if fabricated:
