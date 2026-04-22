@@ -1,0 +1,19 @@
+detector_id: aws.s3_public_access_block
+
+# Per DECISIONS 2026-04-21 (Option C): AC-3 has no FRMR KSI in 0.9.43-beta,
+# so this detector declares ksis empty rather than fudging a mapping. We
+# do NOT claim KSI-SVC-VRI (SC-13 integrity territory, different semantics).
+ksis: []
+
+controls:
+  - id: AC-3
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence only. The detector confirms that
+      public-access-block resources are declared and reports their per-flag
+      posture. It does not cross-reference which buckets have a PAB and
+      which don't, does not inspect the applied bucket policies themselves
+      for public grants, and does not evidence the account-level PAB
+      setting (an orthogonal AWS feature). The Gap Agent performs the
+      bucket↔PAB cross-reference at reasoning time.

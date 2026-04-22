@@ -1,0 +1,12 @@
+detector_id: aws.s3_public_access_block
+
+evidence_shape:
+  resource_type: string       # always "aws_s3_bucket_public_access_block"
+  resource_name: string       # the Terraform logical name
+  posture: enum               # "fully_blocked" | "partial"
+  flags:                      # the four PAB booleans
+    block_public_acls: bool?      # null when absent / unparseable
+    ignore_public_acls: bool?
+    block_public_policy: bool?
+    restrict_public_buckets: bool?
+  gap: string?                # present only when posture="partial"
