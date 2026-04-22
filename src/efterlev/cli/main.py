@@ -510,15 +510,42 @@ def agent_remediate(
             all_evidence = [Evidence.model_validate(p) for _rid, p in store.iter_evidence()]
             ksi_evidence = [ev for ev in all_evidence if ksi in ev.ksis_evidenced]
 
-            # Read the .tf files every evidence record points at, keyed by
-            # the path as stored in the evidence (typically repo-relative).
-            # `resolve_within_root` rejects absolute paths and `..` traversal
-            # so a hostile evidence record cannot exfiltrate arbitrary files
-            # from the host.
+            # Manifest-sourced Evidence is human-signed procedural attestation;
+            # a manifest YAML is NOT Terraform source, so reading it as source
+            # for the Remediation Agent would produce nonsense diffs. The
+            # agent still sees the manifest evidence in its prompt (so it can
+            # reason "this KSI has attestations plus a Terraform gap"); we
+            # just don't load the YAML contents as `.tf` source.
+            from efterlev.primitives.evidence import MANIFEST_DETECTOR_ID
+
+            terraform_evidence = [
+                ev for ev in ksi_evidence if ev.detector_id != MANIFEST_DETECTOR_ID
+            ]
+
+            # If every Evidence for this KSI is manifest-sourced, there is no
+            # Terraform surface for the agent to remediate. That's not an
+            # error — the customer has attested procedurally, but the scanner
+            # found no infra-layer gap to fix. Exit cleanly with a clear
+            # message. This is the common case when a KSI is `partial` and
+            # the gap is purely procedural (documentation, process, or SOP).
+            if not terraform_evidence:
+                typer.echo(
+                    f"{ksi} has only manifest-sourced evidence ({len(ksi_evidence)} "
+                    f"attestation(s)); no Terraform surface to remediate. The "
+                    f"procedural gap — if any — is addressed by updating the "
+                    f"manifest(s) under .efterlev/manifests/, not by a .tf diff."
+                )
+                raise typer.Exit(code=0)
+
+            # Read the .tf files every Terraform-sourced evidence record
+            # points at, keyed by the path as stored in the evidence.
+            # `resolve_within_root` joins against `root` and rejects any
+            # resolved path that escapes containment, so a hostile evidence
+            # record cannot exfiltrate arbitrary files.
             from efterlev.paths import resolve_within_root
 
             source_files: dict[str, str] = {}
-            for ev in ksi_evidence:
+            for ev in terraform_evidence:
                 rel_path = Path(str(ev.source_ref.file))
                 full = resolve_within_root(rel_path, root)
                 if full is None or not full.is_file():

@@ -93,6 +93,87 @@ def test_agent_remediate_without_classification_prints_error(
     assert "no Gap Agent classification" in result.output
 
 
+def test_agent_remediate_short_circuits_on_manifest_only_evidence(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """A KSI whose Evidence is exclusively manifest-sourced has no Terraform
+    surface to remediate — the CLI must exit cleanly before invoking the LLM
+    rather than feeding the YAML manifest to the Remediation Agent as if it
+    were Terraform source. This locks in the filter from Phase 1 polish C.
+    """
+    import json
+
+    from efterlev.models import Claim
+    from efterlev.provenance import ProvenanceStore
+
+    root = Path(str(tmp_path))
+
+    # 1. Init the workspace so FRMR cache + provenance store exist.
+    init_result = runner.invoke(app, ["init", "--target", str(root)])
+    assert init_result.exit_code == 0, init_result.output
+
+    # 2. Drop a manifest attesting to KSI-AFR-FSI (FedRAMP Security Inbox).
+    manifests_dir = root / ".efterlev" / "manifests"
+    manifests_dir.mkdir(parents=True, exist_ok=True)
+    (manifests_dir / "security-inbox.yml").write_text(
+        "ksi: KSI-AFR-FSI\n"
+        "name: FedRAMP Security Inbox\n"
+        "evidence:\n"
+        "  - type: attestation\n"
+        "    statement: security@example.com monitored 24/7 by SOC team.\n"
+        "    attested_by: vp-security@example.com\n"
+        "    attested_at: 2026-04-15\n",
+        encoding="utf-8",
+    )
+
+    # 3. Scan to produce the manifest-sourced Evidence record. No `.tf` files
+    #    are present, so no Terraform Evidence lands — only manifest Evidence.
+    scan_result = runner.invoke(app, ["scan", "--target", str(root)])
+    assert scan_result.exit_code == 0, scan_result.output
+
+    # 4. Persist a `partial` classification for KSI-AFR-FSI directly. We
+    #    don't run the Gap Agent (it needs an API key); we just write the
+    #    Claim in the shape the reconstruction helper expects, cited by
+    #    the manifest Evidence id.
+    with ProvenanceStore(root) as store:
+        manifest_evidence = [
+            p for _rid, p in store.iter_evidence() if p["detector_id"] == "manifest"
+        ]
+        assert manifest_evidence, "scan should have produced one manifest Evidence record"
+        ev_id = manifest_evidence[0]["evidence_id"]
+        clf = Claim.create(
+            claim_type="classification",
+            content={
+                "ksi_id": "KSI-AFR-FSI",
+                "status": "partial",
+                "rationale": "Procedural attestation present; infra layer n/a.",
+            },
+            confidence="medium",
+            derived_from=[ev_id],
+            model="stub",
+            prompt_hash="stub",
+        )
+        store.write_record(
+            payload=json.loads(clf.model_dump_json()),
+            record_type="claim",
+            derived_from=[ev_id],
+            agent="stub",
+            model="stub",
+            prompt_hash="stub",
+            metadata={"kind": "ksi_classification", "ksi_id": "KSI-AFR-FSI"},
+        )
+
+    # 5. Invoke remediate. The CLI must short-circuit with a clean message
+    #    before calling any LLM — if it reached the agent, the test would
+    #    fail with a missing-API-key error.
+    result = runner.invoke(
+        app, ["agent", "remediate", "--ksi", "KSI-AFR-FSI", "--target", str(root)]
+    )
+    assert result.exit_code == 0, result.output
+    assert "no Terraform surface to remediate" in result.output
+    assert ".efterlev/manifests/" in result.output
+
+
 def test_agent_document_without_classifications_prints_error(
     tmp_path: pytest.TempPathFactory,
 ) -> None:
