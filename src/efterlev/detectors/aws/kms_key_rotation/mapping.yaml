@@ -1,0 +1,19 @@
+detector_id: aws.kms_key_rotation
+
+# DECISIONS 2026-04-21 Option C: SC-12 has no FRMR KSI in 0.9.43-beta.
+# KSI-SVC-VRI carries SC-13 (protection) but not SC-12 (key management) —
+# different semantic territory.
+ksis: []
+
+controls:
+  - id: SC-12
+    enhancements: [SC-12(2)]
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence only. The detector confirms that
+      aws_kms_key resources declare enable_key_rotation=true on symmetric
+      CMKs. Asymmetric keys are noted as rotation_status=not_applicable.
+      The detector does not evidence HSM posture, BYOK/external key
+      material import, multi-region replica key handling, or whether
+      applications actually use the declared CMK vs. AWS-managed defaults.

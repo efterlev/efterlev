@@ -1,0 +1,9 @@
+detector_id: aws.kms_key_rotation
+
+evidence_shape:
+  resource_type: string            # always "aws_kms_key"
+  resource_name: string            # the Terraform logical name
+  rotation_status: enum            # "enabled" | "disabled" | "not_applicable"
+  key_spec: string?                # present when rotation_status=not_applicable (asymmetric)
+  note: string?                    # present when rotation_status=not_applicable
+  gap: string?                     # present only when rotation_status=disabled
