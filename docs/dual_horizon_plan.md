@@ -289,40 +289,44 @@ The deliberate gaps are what the Gap Agent flags and the Remediation Agent fixes
 
 This is where Efterlev stops being a hackathon demo and becomes a useful tool that people depend on.
 
-### 3.1 The coverage roadmap
+### 3.1 The coverage roadmap (v1 locked 2026-04-22)
 
-> **v1 sequencing superseded 2026-04-22.** The month-by-month targets below reflect the original pre-v0 plan and remain useful context. The authoritative v1 phase sequencing — archetype-only, commercial AWS first, 20x-native output first (FRMR only), closed-source through v1 — is in `DECISIONS.md` 2026-04-22. In particular: OSCAL generators moved from Month 1 of v1 to v1.5+ (gated on customer pull); AWS Bedrock moved from Month 2 to Month 3–4 (gated on GovCloud prospect demand); Phase 4 (runtime + drift) and Phase 6 (detector breadth) moved earlier. A full rewrite of this section is a scheduled follow-up.
+This section reflects the v1 locked plan from `DECISIONS.md` 2026-04-22 "Lock v1 scope." Four commitments shape the phasing:
 
-Expansion happens along three axes in parallel: **input sources** (what Efterlev can scan), **KSI coverage** (what it can find at the user-facing layer), and **output formats** (how it speaks to downstream tooling). Source-type expansion matters more for adoption; KSI/control depth matters more for trust; the OSCAL output generator is the major v1 format expansion for users carrying Rev5 transition submissions.
+1. **Archetype-only.** No named design partner; we design against the primary ICP from `docs/icp.md`.
+2. **Commercial AWS first.** Deployment modes 1 (developer laptop) and 2 (CI runner) cover the initial base; GovCloud + Bedrock are gated on prospect pull.
+3. **20x-native output first.** FRMR-attestation generator is the only v1 production output format; OSCAL SSP/AR/POA&M generators defer to v1.5+ gated on Rev5-transition or OSCAL-Hub-consuming customer demand.
+4. **Closed-source through v1.** Private repo, no public announcement, customer security-review access via private-repo invite under NDA.
 
-Public milestone targets, tracked in GitHub:
+Expansion still happens along three axes — **input sources** (what Efterlev can scan), **KSI coverage** (what it can find at the user-facing layer), and **output formats** (how it speaks to downstream tooling) — but the priorities are reordered: procedural coverage (Evidence Manifests) lifts the KSI ceiling from ~20% (scanner-only) toward the 80% needed for a real FedRAMP Moderate package; detector breadth is how the remaining scanner-visible layer fills in; runtime + drift is how the tool becomes load-bearing in CI.
 
-- **Month 1:**
-  - Full audit of v0 code; refactor hackathon shortcuts
-  - KSI/control coverage stays at 6 detectors, but quality per detector improves
-  - **FRMR output** passes FedRAMP schema validation end-to-end (continuation of Day 3 work)
-  - **OSCAL output generators land** (Assessment Results, partial SSP, POA&M). Internal `AttestationDraft` + Evidence + Claim objects serialize to OSCAL alongside FRMR. Validates against NIST OSCAL schemas before return. This is the v1 priority for users transitioning Rev5 submissions.
-  - **Source expansion:** Terraform Plan JSON support (scans resolved plans including computed values); OpenTofu declared first-class alongside Terraform
-- **Month 2:**
-  - **+15 detectors** for Terraform/OpenTofu (total 21), prioritized by KSI coverage: additional indicators across the IAM, CMT, MLA, and SVC themes. "Proves / does not prove" documentation for each.
-  - **Source expansion:** CloudFormation and AWS CDK support (CDK compiles to CloudFormation; one parser covers both). First round of detectors ported to the new source type.
-  - AWS Bedrock as a second LLM backend for FedRAMP-authorized deployments (GovCloud)
-- **Month 3:**
-  - **+15 detectors** (total 36)
-  - **Source expansion:** Kubernetes manifests + Helm charts. New KSI coverage (network policies, pod security standards, RBAC under the CNA and IAM themes).
-  - Community contribution goal: first external detector PR merged
-  - Tutorial on "write your own detector" published
-- **Month 4:**
-  - CI integration as a first-class mode. GitHub Action published. Findings-as-PR-comments working.
-  - **Source expansion:** Pulumi (code-first IaC; trickier parsing, lower priority than Terraform/CloudFormation/K8s but real user demand)
-- **Month 5:**
-  - CMMC 2.0 overlay. Same 800-171 base as FedRAMP; CMMC-specific baseline loaded and detections mapped. Second framework shipped.
-  - KSI coverage targeting ~60% of FRMR-Moderate across supported source types
-- **Month 6:**
-  - Drift Agent: watches a repo over time, flags when a change breaks a previously-attested KSI. Continuous monitoring delivered in a developer-facing shape.
-  - KSI coverage targeting 80% of FRMR-Moderate
+**Month 1 (Phases 1 + 2):**
+- **Phase 1 — Evidence Manifest.** Customers author `.efterlev/manifests/*.yml` to declare human-signed procedural attestations. `EvidenceManifest` Pydantic model; `load_evidence_manifests` primitive; agents consume manifest `Evidence` alongside detector `Evidence` transparently. (Landed 2026-04-22 as `d43a2a3` + `7cc86d6`.)
+- **Phase 2 — FRMR attestation output.** `generate_frmr_attestation` primitive serializes `AttestationDraft` to FRMR-compatible JSON, Pydantic-validated at construction, emitted alongside the HTML report by `efterlev agent document`. (Landed 2026-04-22 as `5d35bf7`.)
+- **Source expansion:** Terraform Plan JSON support (scans resolved plans including computed values); OpenTofu declared first-class alongside Terraform.
 
-**v1.5 and beyond:** Runtime cloud API scanning (different threat model, needs its own design pass); ICP B becomes primary (defense contractors on CMMC 2.0 / DoD IL) with CUI handling and air-gap mode.
+**Month 2 (Phase 4 pulled forward + Phase 6 begins):**
+- **Phase 4 — Runtime + drift.** `source="aws-runtime"` detector hook so detectors can opt into boto3-backed evaluation against the live account; `scan_aws_runtime` primitive. `compare_scans` primitive + drift HTML renderer showing what changed in posture over the last 30 days. Evidence freshness + staleness surfacing in Gap Agent output (paired with Phase 5 for the prompt-layer treatment). This pulls forward from the original Month 3 slot because the canonical-JSON FRMR output from Phase 2 makes byte-stable diffs trivial.
+- **Phase 6 (begins) — Detector library breadth.** Target total: 30 detectors (from the current 6). Coverage for the AWS controls that appear in every real SaaS FedRAMP Moderate package: security groups, VPC config, KMS key policies + rotation, S3 bucket policies, IAM Access Analyzer, CloudTrail log-file validation, GuardDuty enablement, Config rules, ECR image scanning, RDS encryption, Secrets Manager usage, etc. Runs in parallel with Phase 4.
+
+**Month 3 (Phase 5 + Phase 6 continues):**
+- **Phase 5 — Workflow maturity.** `reviewed_by` / `reviewed_at` / `approved_by` fields added to `AttestationDraft` (additive to the existing `requires_review=True` invariant, not replacing it). DRAFT banner upgrades to "REVIEWED BY …" once a human review lands — never "AUTHORIZED" (that stays a human-only decision). Sigstore cryptographic signing of output records and a verification tool for 3PAOs. POA&M markdown export ready for Jira/Linear ingestion.
+- **Phase 6 (continues) — Detector library breadth** toward the 30 target.
+- Manifest staleness treatment at the Gap Agent prompt layer (uses the `is_stale` signal Phase 1 already emits in `Evidence.content`).
+
+**Month 3–4 (Phase 3, gated):**
+- **Phase 3 — Multi-backend LLM, pulled on GovCloud demand.** `BedrockClient` implementing the existing `LLMClient` protocol. Commercial Bedrock first; GovCloud Bedrock second (separate region + endpoint handling). Anthropic prompt caching on both backends. `efterlev doctor` command to validate backend configuration before agent runs. This phase ships when a prospect surfaces with GovCloud requirements; until then, Anthropic-direct is sufficient for the archetype's laptop + CI deployment modes.
+
+**Month 4–6:** CI integration as a first-class mode (GitHub Action published; findings-as-PR-comments working; GitLab/CircleCI docs). Continued detector growth. Dogfood pass: we publish Efterlev's own KSI gap report against the Efterlev repo itself.
+
+**v1.5+ (gated on customer pull):**
+- **OSCAL output generators.** Assessment Results, partial SSP, POA&M. The internal model is already FRMR-shaped and the `oscal/` slot exists in the architecture; the generators land when a Rev5-transition user or OSCAL-Hub-consuming prospect surfaces.
+- **Source expansion:** CloudFormation + AWS CDK (one parser covers both); Kubernetes manifests + Helm; Pulumi. Each is a parallel detector folder per the established library structure.
+- **CMMC 2.0 overlay.** Same 800-171 base; CMMC-specific baseline loaded and detections mapped. Pulls forward from "v1 month 5" to v1.5+ as ICP B becomes primary.
+- **ICP B becomes primary** (defense contractors on CMMC 2.0 / DoD IL) with CUI handling, air-gap mode, and GovCloud-by-default deployment.
+- **Runtime cloud API scanning** for partially-codified infrastructure. Needs its own design pass.
+
+Community contribution workflow and public-OSS reopening are re-evaluated at first customer engagement or Month 6, whichever comes first.
 
 ### 3.2 v1 agent roster
 
