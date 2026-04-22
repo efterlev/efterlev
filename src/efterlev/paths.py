@@ -93,13 +93,15 @@ def resolve_within_root(candidate: Path, root: Path) -> Path | None:
     success, `None` on any attempted escape.
 
     `candidate` may be absolute or relative. Both are treated the same way:
-    resolve against `root`, then check containment. Absolute paths that
-    happen to live inside `root` are accepted — the Terraform parser captures
-    source_ref.file paths exactly as they were walked at scan time, which in
-    CI is absolute (e.g. `/home/runner/work/repo/infra/terraform/main.tf`).
-    Rejecting those on principle broke the remediation flow; containment is
-    the real safety check. Absolute paths outside `root` (`/etc/passwd`,
-    `../../../secrets`) still fail containment and are rejected.
+    resolve against `root`, then check containment. In the post-2026-04-22
+    path-hardening pass, detectors and the manifest loader record
+    repo-relative paths in `Evidence.source_ref.file` specifically so this
+    helper's job is trivial: `root / rel_path`, resolved. Absolute paths are
+    still accepted (for back-compat with legacy Evidence records that may
+    predate the hardening, and for single-file test callers that pass
+    absolute paths) — containment is the real safety check. Absolute paths
+    outside `root` (`/etc/passwd`, `../../../secrets`) still fail
+    containment and are rejected.
     """
     resolved_root = root.resolve()
     try:

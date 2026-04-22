@@ -52,6 +52,7 @@ def test_primitive_of_empty_dir_is_a_clean_noop(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=tmp_path / "manifests",
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
     assert result.files_found == 0
@@ -70,6 +71,7 @@ def test_primitive_loads_manifest_and_emits_evidence(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=manifest_dir,
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
         record_ids = store.iter_records()
@@ -104,6 +106,7 @@ def test_primitive_marks_past_due_attestation_as_stale(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=manifest_dir,
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
 
@@ -120,6 +123,7 @@ def test_primitive_skips_unknown_ksi_and_reports(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=manifest_dir,
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
         evidence_records = store.iter_evidence()
@@ -142,6 +146,7 @@ def test_primitive_emits_one_evidence_per_attestation(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=manifest_dir,
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
         evidence_records = store.iter_evidence()
@@ -152,6 +157,63 @@ def test_primitive_emits_one_evidence_per_attestation(tmp_path: Path) -> None:
     # Each attestation produced a distinct Evidence id (different statements).
     ids = {ev.evidence_id for ev in result.evidence}
     assert len(ids) == 3
+
+
+def test_primitive_records_paths_relative_to_scan_root(tmp_path: Path) -> None:
+    """Evidence.source_ref.file is repo-relative, not absolute.
+
+    Keeps the provenance store, HTML reports, and FRMR attestation JSON
+    output free of the user's absolute filesystem layout. Readers that
+    need the absolute path use `paths.resolve_within_root(rel, root)`.
+    """
+    manifest_dir = tmp_path / ".efterlev" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    _write_manifest(manifest_dir)
+
+    with ProvenanceStore(tmp_path) as store, active_store(store):
+        result = load_evidence_manifests(
+            LoadEvidenceManifestsInput(
+                manifest_dir=manifest_dir,
+                ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
+            )
+        )
+
+    ev = result.evidence[0]
+    # Relative path (no leading "/" on Unix; no drive letter on Windows).
+    assert not ev.source_ref.file.is_absolute()
+    # Expected shape: ".efterlev/manifests/security-inbox.yml".
+    assert str(ev.source_ref.file) == ".efterlev/manifests/security-inbox.yml"
+
+
+def test_primitive_handles_manifests_outside_scan_root_with_warning(tmp_path: Path) -> None:
+    """A manifest file outside scan_root is loaded but path is recorded as-is.
+
+    This is a misuse path (caller pointed the primitive at a dir outside
+    the repo root); we log a warning and still produce valid Evidence
+    rather than crashing. The content is still correct; only the path
+    privacy property is lost.
+    """
+    manifest_dir = tmp_path / "outside" / "manifests"
+    manifest_dir.mkdir(parents=True)
+    _write_manifest(manifest_dir)
+
+    elsewhere_root = tmp_path / "repo-root"
+    elsewhere_root.mkdir()
+
+    with ProvenanceStore(elsewhere_root) as store, active_store(store):
+        result = load_evidence_manifests(
+            LoadEvidenceManifestsInput(
+                manifest_dir=manifest_dir,
+                ksi_to_controls=_KSI_CONTROLS,
+                scan_root=elsewhere_root,
+            )
+        )
+
+    assert result.evidence_count == 1
+    ev = result.evidence[0]
+    # The path is absolute because the manifest isn't under scan_root.
+    assert ev.source_ref.file.is_absolute()
 
 
 def test_primitive_handles_multiple_manifests(tmp_path: Path) -> None:
@@ -165,6 +227,7 @@ def test_primitive_handles_multiple_manifests(tmp_path: Path) -> None:
             LoadEvidenceManifestsInput(
                 manifest_dir=manifest_dir,
                 ksi_to_controls=_KSI_CONTROLS,
+                scan_root=tmp_path,
             )
         )
 

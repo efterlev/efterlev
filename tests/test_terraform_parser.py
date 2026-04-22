@@ -23,10 +23,39 @@ def test_parses_single_bucket_resource(tmp_path: Path) -> None:
     assert r.type == "aws_s3_bucket"
     assert r.name == "logs"
     assert r.body.get("bucket") == "my-logs"
+    # Single-file caller with no repo-root context → path recorded verbatim.
     assert r.source_ref.file == tf
     assert r.source_ref.line_start == 1
     assert r.source_ref.line_end is not None
     assert r.source_ref.line_end >= 2
+
+
+def test_parse_tree_records_paths_relative_to_target_dir(tmp_path: Path) -> None:
+    """`source_ref.file` must be repo-relative when walked via parse_terraform_tree.
+
+    Keeps the provenance store, HTML reports, and FRMR JSON output free
+    of the user's absolute filesystem layout. Readers recover the
+    absolute path via `paths.resolve_within_root(file, root)`.
+    """
+    nested = tmp_path / "infra" / "modules"
+    nested.mkdir(parents=True)
+    (nested / "bucket.tf").write_text('resource "aws_s3_bucket" "a" { bucket = "a" }\n')
+    (tmp_path / "root.tf").write_text('resource "aws_s3_bucket" "b" { bucket = "b" }\n')
+
+    resources = parse_terraform_tree(tmp_path)
+    recorded = {str(r.source_ref.file) for r in resources}
+    # Both paths are relative to tmp_path (never absolute, never containing
+    # the test's /tmp/pytest-of-*/… prefix).
+    assert recorded == {"root.tf", "infra/modules/bucket.tf"}
+    for r in resources:
+        assert not r.source_ref.file.is_absolute()
+
+
+def test_parse_file_with_explicit_record_as_uses_that_path(tmp_path: Path) -> None:
+    tf = tmp_path / "main.tf"
+    tf.write_text('resource "aws_s3_bucket" "logs" { bucket = "l" }\n')
+    resources = parse_terraform_file(tf, record_as=Path("infra/main.tf"))
+    assert str(resources[0].source_ref.file) == "infra/main.tf"
 
 
 def test_parses_multiple_resources_with_distinct_line_ranges(tmp_path: Path) -> None:

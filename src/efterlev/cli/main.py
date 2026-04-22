@@ -182,6 +182,7 @@ def scan(
                 LoadEvidenceManifestsInput(
                     manifest_dir=manifest_dir,
                     ksi_to_controls=ksi_to_controls,
+                    scan_root=root,
                 )
             )
     except (DetectorError, ManifestError) as e:

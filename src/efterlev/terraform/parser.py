@@ -31,17 +31,36 @@ def parse_terraform_tree(target_dir: Path) -> list[TerraformResource]:
     Files that fail to parse raise `DetectorError`; in v0 one bad file fails
     the whole scan so users get a clear signal rather than silent partial
     results. v1 may loosen this to collect-and-continue with warnings.
+
+    Each resource's `source_ref.file` is recorded as a path relative to
+    `target_dir` — keeps the provenance store, HTML reports, and FRMR
+    attestation JSON free of the user's absolute filesystem layout. The
+    Remediation Agent and other readers recover the absolute path via
+    `paths.resolve_within_root(file, root)` at read time.
     """
     if not target_dir.is_dir():
         raise DetectorError(f"target is not a directory: {target_dir}")
     resources: list[TerraformResource] = []
     for tf_file in sorted(target_dir.rglob("*.tf")):
-        resources.extend(parse_terraform_file(tf_file))
+        relative = tf_file.relative_to(target_dir)
+        resources.extend(parse_terraform_file(tf_file, record_as=relative))
     return resources
 
 
-def parse_terraform_file(path: Path) -> list[TerraformResource]:
-    """Parse one `.tf` file; return every `resource` block as a typed record."""
+def parse_terraform_file(
+    path: Path,
+    *,
+    record_as: Path | None = None,
+) -> list[TerraformResource]:
+    """Parse one `.tf` file; return every `resource` block as a typed record.
+
+    `path` is the filesystem path used for I/O. `record_as`, when provided,
+    is the path recorded in `SourceRef.file` — typically the repo-relative
+    path produced by `parse_terraform_tree`. When None, `path` is recorded
+    verbatim (for direct single-file callers with no repo-root context,
+    e.g. unit tests).
+    """
+    recorded = record_as if record_as is not None else path
     text = path.read_text(encoding="utf-8")
     try:
         with path.open(encoding="utf-8") as f:
@@ -73,7 +92,7 @@ def parse_terraform_file(path: Path) -> list[TerraformResource]:
                         name=rname,
                         body=actual_body if isinstance(actual_body, dict) else {},
                         source_ref=SourceRef(
-                            file=path,
+                            file=recorded,
                             line_start=line_start,
                             line_end=line_end,
                         ),

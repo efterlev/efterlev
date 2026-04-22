@@ -54,12 +54,17 @@ class LoadEvidenceManifestsInput(BaseModel):
     `ksi_to_controls` comes from the loaded FRMR document and is used to
     populate `Evidence.controls_evidenced` without duplicating the mapping
     in the YAML files (single source of truth: FRMR).
+    `scan_root` is the repo root (usually the `--target` argument to the
+    CLI); manifest paths in `Evidence.source_ref.file` are recorded
+    relative to it so the provenance store, HTML reports, and FRMR JSON
+    output do not leak the user's absolute filesystem layout.
     """
 
     model_config = ConfigDict(frozen=True)
 
     manifest_dir: Path
     ksi_to_controls: dict[str, list[str]]
+    scan_root: Path
 
 
 class ManifestLoadSummary(BaseModel):
@@ -124,11 +129,25 @@ def load_evidence_manifests(
             continue
 
         controls = input.ksi_to_controls[manifest.ksi]
+        # Record each manifest's source_ref.file as a path relative to
+        # scan_root — never absolute. If `path` isn't under `scan_root`
+        # (misuse), fall back to the raw path rather than raising: the
+        # resulting Evidence still carries the correct content, just
+        # without the privacy benefit.
+        try:
+            recorded_path = path.relative_to(input.scan_root)
+        except ValueError:
+            log.warning(
+                "manifest %s is not under scan_root %s; recording absolute path",
+                path,
+                input.scan_root,
+            )
+            recorded_path = path
         for attestation in manifest.evidence:
             ev = _build_evidence(
                 manifest=manifest,
                 attestation=attestation,
-                manifest_path=path,
+                manifest_path=recorded_path,
                 controls=controls,
                 now=now,
             )
