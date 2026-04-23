@@ -211,7 +211,13 @@ def scan(
         typer.echo("")
         typer.echo("Detector record IDs (pass to `efterlev provenance show`):")
         for rid, ev in zip(scan_result.evidence_record_ids, scan_result.evidence, strict=False):
-            typer.echo(f"  {rid}  {ev.content.get('resource_name', '—')}")
+            # Include the short detector id so records with identical
+            # resource_name across detectors (e.g. "cloudtrail" = trail,
+            # bucket, SSE, backup-retention) are distinguishable in the
+            # listing. Dogfood-2026-04-22 finding #6.
+            short_det = ev.detector_id.split(".", 1)[1] if "." in ev.detector_id else ev.detector_id
+            resource_name = ev.content.get("resource_name", "—")
+            typer.echo(f"  {rid}  {short_det:<38}  {resource_name}")
 
 
 @agent_app.command("gap")

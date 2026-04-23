@@ -58,3 +58,4 @@ out/
 .claude/settings.local.json
 
 # Note: uv.lock is intentionally committed.
+.dogfood/
