@@ -72,10 +72,13 @@ v0 is complete on `main`. v1 Phase 1 and Phase 2, plus six post-review fixups, h
 - `aws.encryption_ebs` — SC-28 / SC-28(1), `ksis=[]`. Scans `aws_ebs_volume` + `aws_instance.{root,ebs}_block_device`, emits per-block Evidence so mixed postures (encrypted root + unencrypted data) are visible.
 - `aws.iam_user_access_keys` — IA-2 / AC-2, `ksis=[KSI-IAM-MFA]`. Flags every declared `aws_iam_access_key` as a posture gap; claims KSI-IAM-MFA because access keys bypass MFA by design (applying the Phase 6-lite discipline: control membership AND statement-evidencing).
 
+**Plan JSON source-expansion (`79c25db`, `8774727`, `34e6755`):** Design entry + Phase A implementation of Terraform Plan JSON support — dogfood finding P0. Users generate plan JSON as part of their CI (`terraform plan -out X && terraform show -json X > plan.json`) and pass it to `efterlev scan --target . --plan FILE`. The translator (`efterlev.terraform.parse_plan_json`) normalizes plan-JSON resources into the same `TerraformResource` shape HCL parsing produces, so every existing detector runs against plan-derived resources without modification. Second dogfood re-run against govnotes: hit rate 5/12 → **8/12 full-catch** (gap #1 `user_uploads` encryption now visible via module-expansion; gap #7 `readonly_auditor` MFA visible because plan JSON resolves the `jsonencode(data.aws_iam_policy_document…)` expression at plan time — the existing detector's static-JSON path just works, zero detector changes). Partial+full: 7/12 → 10/12. Full design call: DECISIONS 2026-04-22 "Design: Terraform Plan JSON support."
+
 **End state at 2026-04-22:**
-- 315 tests passing (+ 1 E2E skipped by default without `ANTHROPIC_API_KEY`).
-- ruff clean; mypy strict-clean on 92 source files (strict on `efterlev.{primitives,detectors,oscal,manifests}.*`).
+- 329 tests passing (+ 1 E2E skipped by default without `ANTHROPIC_API_KEY`).
+- ruff clean; mypy strict-clean on 94 source files (strict on `efterlev.{primitives,detectors,oscal,manifests}.*`).
 - 14 detectors registered (6 v0 + 6 Phase 6-lite + 2 coverage-followup); 8 declare a KSI mapping and 6 surface at the 800-53 level only per the SC-28 Option-C precedent (DECISIONS 2026-04-21 design call #1). The ksis=[] posture is the honest default when no FRMR KSI maps the relevant control, and Phase 6-lite formalized a second discipline: control membership in a KSI's FRMR `controls` array is necessary but not sufficient for claiming that KSI — the detector must also evidence what the KSI's *statement* commits to.
+- Two scan modalities: HCL-directory (`--target DIR`) for local dev; plan JSON (`--plan FILE`) for CI. Both modalities flow Evidence through the same detectors and the same provenance store; downstream (agents, renderers) is modality-agnostic.
 - Full pipeline verified end-to-end against a real Opus 4.7 call: Gap (60-KSI classification, 88s), Documentation (per-KSI Sonnet 4.6 narratives, ~7min), Remediation (diff-shaped output, 13s). 12/13 critical checks pass, 5/5 quality checks pass.
 - `generate_frmr_attestation` produces canonical, byte-stable JSON with typed-Pydantic validation at construction.
 
