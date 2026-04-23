@@ -1,0 +1,7 @@
+detector_id: aws.cloudtrail_log_file_validation
+
+evidence_shape:
+  resource_type: string            # always "aws_cloudtrail"
+  resource_name: string            # the Terraform logical name
+  validation_status: enum          # "enabled" | "disabled"
+  gap: string?                     # present only when validation_status=disabled
