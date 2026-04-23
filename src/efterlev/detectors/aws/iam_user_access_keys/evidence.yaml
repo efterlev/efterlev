@@ -1,0 +1,9 @@
+detector_id: aws.iam_user_access_keys
+
+evidence_shape:
+  resource_type: string       # always "aws_iam_access_key"
+  resource_name: string       # the Terraform logical name
+  attached_user: string?      # HCL reference or literal; null if unparseable
+  status: string              # "Active" | "Inactive" (AWS default is Active)
+  secret_wrapping: enum?      # "pgp" | "ssh_public_key"; omitted when secret is plaintext-in-state
+  gap: string                 # always present — any declared key is a posture gap
