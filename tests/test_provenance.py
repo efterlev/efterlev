@@ -185,6 +185,65 @@ def test_render_chain_text_indents_parents(tmp_path: Path) -> None:
         assert "(leaf — no derived_from)" in output
 
 
+def test_render_chain_text_surfaces_source_ref_at_evidence_leaves(tmp_path: Path) -> None:
+    """`efterlev provenance show` must surface source file + line range at
+    evidence leaves so the user can trace a claim back to Terraform without
+    opening the blob manually. Regression test for the gap caught in the
+    2026-04-23 external review."""
+    with ProvenanceStore(tmp_path) as store:
+        ev = store.write_record(
+            payload={
+                "detector_id": "aws.encryption_s3_at_rest",
+                "source_ref": {"file": "infra/main.tf", "line_start": 12, "line_end": 18},
+                "content": {"resource_name": "reports", "encryption_state": "absent"},
+            },
+            record_type="evidence",
+            primitive="aws.encryption_s3_at_rest@0.1.0",
+        )
+        claim = store.write_record(
+            payload={"status": "not_implemented"},
+            record_type="claim",
+            derived_from=[ev.record_id],
+            agent="gap_agent",
+            model="claude-opus-4-7",
+        )
+        tree = walk_chain(store, claim.record_id)
+        output = render_chain_text(tree)
+        assert "source=infra/main.tf:12-18" in output
+
+
+def test_render_chain_text_handles_single_line_source_ref(tmp_path: Path) -> None:
+    with ProvenanceStore(tmp_path) as store:
+        ev = store.write_record(
+            payload={
+                "source_ref": {"file": "main.tf", "line_start": 5, "line_end": 5},
+            },
+            record_type="evidence",
+        )
+        tree = walk_chain(store, ev.record_id)
+        output = render_chain_text(tree)
+        # Collapse file:5-5 into file:5 for single-line references.
+        assert "source=main.tf:5" in output
+        assert "5-5" not in output
+
+
+def test_render_chain_text_omits_source_line_when_payload_lacks_source_ref(
+    tmp_path: Path,
+) -> None:
+    """Non-Evidence records emitted under record_type=evidence by a
+    primitive (e.g. init's catalog-loaded receipt) may not have a
+    source_ref. The renderer must not crash and must not invent content."""
+    with ProvenanceStore(tmp_path) as store:
+        rec = store.write_record(
+            payload={"action": "catalogs_loaded", "baseline": "fedramp-20x-moderate"},
+            record_type="evidence",
+            primitive="efterlev.init@0.1.0",
+        )
+        tree = walk_chain(store, rec.record_id)
+        output = render_chain_text(tree)
+        assert "source=" not in output
+
+
 # --- verify_receipts ----------------------------------------------------------
 
 
