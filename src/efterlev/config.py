@@ -22,17 +22,23 @@ from efterlev.errors import ConfigError
 
 DEFAULT_BASELINE = "fedramp-20x-moderate"
 DEFAULT_ANTHROPIC_MODEL = "claude-opus-4-7"
-DEFAULT_FALLBACK_MODEL = "claude-sonnet-4-6"
 
 
 class LLMConfig(BaseModel):
-    """Which LLM endpoint and model the generative agents call."""
+    """Which LLM endpoint and model the generative agents call.
+
+    Per CLAUDE.md "keep it small; don't include settings that don't yet
+    do anything" — the previously-declared `fallback_model` field was
+    written at init but never read, so it was removed on 2026-04-23
+    during the docs-vs-code honesty pass. Retry-with-fallback to Sonnet
+    on transient Opus errors is a planned v1.x feature; the field will
+    return when the behavior lands. See `LIMITATIONS.md`.
+    """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     backend: str = "anthropic"
     model: str = DEFAULT_ANTHROPIC_MODEL
-    fallback_model: str = DEFAULT_FALLBACK_MODEL
 
 
 class ScanConfig(BaseModel):
@@ -87,7 +93,6 @@ def save_config(config: Config, path: Path) -> None:
         "[llm]",
         f'backend = "{config.llm.backend}"',
         f'model = "{config.llm.model}"',
-        f'fallback_model = "{config.llm.fallback_model}"',
         "",
         "[scan]",
         f'target_dir = "{config.scan.target_dir}"',
