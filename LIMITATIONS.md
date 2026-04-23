@@ -118,18 +118,19 @@ persisted Claim resolves to an actual record in the provenance store.
 That would close the gap that a bug in an agent or a direct store-write
 path could create. Tracked as follow-up.
 
-**Retry + Opus-to-Sonnet fallback on transient errors:** the
-`fallback_model` field in `config.py` is written at init time but not
-read anywhere. `AnthropicClient` raises immediately on every
-`anthropic` exception class. A transient 429 or 529 during a 60-KSI
-Gap run fails the whole run. Tracked as follow-up; the config field
-exists but is dead code today.
+**Retry + Opus-to-Sonnet fallback on transient errors:** not
+implemented. `AnthropicClient` raises immediately on every `anthropic`
+exception class. A transient 429 or 529 during a 60-KSI Gap run fails
+the whole run. The `fallback_model` config field that had been written
+(but never read) was removed on 2026-04-23 per the honesty pass; it
+will return when the retry+fallback behavior actually lands. Tracked
+as follow-up.
 
-**Provenance-walk source-ref rendering:** `efterlev provenance show`
-displays `content_ref` (blob path) at leaves but does NOT load the
-blob and pretty-print the Evidence's `source_ref.file:line_start-line_end`.
-The data is there in the store; the walker just doesn't format it.
-Small enhancement tracked as follow-up.
+**Provenance-walk source-ref rendering:** RESOLVED 2026-04-23
+(commit `69873a0`). The walker now loads the evidence blob at walk
+time and the renderer appends `source=<file>:<start>-<end>` at
+evidence leaves. Non-Evidence evidence-typed records (init receipts,
+mcp_tool_call records) cleanly omit the line.
 
 **PyPI release and `pipx install efterlev`:** the package is `0.0.1`,
 the repo is private, and there is no PyPI release. Users install from

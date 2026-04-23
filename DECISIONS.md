@@ -937,6 +937,68 @@ Plan JSON support is named in the v1 locked plan (`docs/dual_horizon_plan.md` §
 
 ---
 
+## 2026-04-23 — External deep-review honesty pass `[process]` `[discipline]` `[security]`
+
+**Context.** An external reviewer ran a grep-level audit against the committed codebase and the user-facing docs on 2026-04-23 and found several places where the docs claimed features the code didn't implement. The findings were backed by specific file paths and line numbers, and they reproduced in this checkout. This is a direct violation of the non-negotiable Principle 1 from `CLAUDE.md` ("Evidence before claims") applied to our own documentation surface: if the tool won't trust an LLM to claim "implemented" without evidence, the prose must not claim features exist without code.
+
+Three categories of finding + decisions for each:
+
+**Category A — docs claim code that does not exist. Fix: delete the claim OR implement.**
+
+- **`validate_claim_provenance` primitive.** `THREAT_MODEL.md:101`, `docs/day1_brief.md:57`, `CONTRIBUTING.md:234`, `models/claim.py:7`, and multiple points in `DECISIONS.md` (the 2026-04-21 design-call #3 entry) referenced a primitive verifying that every `derived_from` evidence_id resolves in the store before Claim storage. Grep of `src/` returns zero matches. **Decision: keep the per-agent `_validate_cited_ids` fence-citation validators that DO exist as the primary enforcement; downgrade the store-level primitive to a planned v1.x defense-in-depth item in LIMITATIONS.md; rewrite every doc reference to describe what's actually enforced and what's planned. Do not implement the primitive in this pass** — the fence validator is the architectural workhorse and already ships; the store-level check is a genuine nice-to-have that deserves its own design conversation, not a rushed add under review pressure. The 2026-04-21 design-call #3 historical entry in DECISIONS is left intact (don't rewrite history); it's honest about the primitive being a Phase-3 addition that didn't subsequently land.
+- **Secret redaction before LLM transmission.** `THREAT_MODEL.md:42-46` stated "Secrets are never logged in plaintext… Secrets are never sent to the LLM. The Documentation, Gap, and Remediation agents see redacted evidence records." Grep of `src/` for `redact|scrub|hash_secret` returns nothing. `format_evidence_for_prompt` in `agents/base.py` JSON-serializes `Evidence.content` verbatim into the prompt. **Decision: rewrite THREAT_MODEL.md's Secrets-handling section to name the current state honestly (no redaction pass today; evidence content reaches the LLM verbatim; users with secret-laden Terraform should run scanner-only mode) and document the planned mitigation (a `scrub_for_llm` pass between detectors and prompt assembly) as an unimplemented v1.x feature.** Implementation is 4-8 hours of careful work with per-detector redaction fixtures, a pure-function helper in `efterlev.llm`, and a pre-agent primitive hook — too much scope for a single commit under review pressure, and getting it wrong is worse than admitting it's absent.
+- **"Releases are signed (sigstore/cosign, to be established before v1 release)" in THREAT_MODEL.md T5.** Rewritten to name the actual v0 state: private repo, not on PyPI, no signed artifacts; sigstore is a v1-release gate.
+- **CONTRIBUTING.md's detector tutorial taught `ksis=["KSI-SVC-VRI"]` for `aws.encryption_s3_at_rest`** — the exact mapping DECISIONS 2026-04-21 design call #1 Option C explicitly rejects as a semantic fudge. **Decision: rewrite the tutorial to match production code (`ksis=[]`) so new contributors are taught the discipline that landed, not the version that was rejected.** Also switched `Evidence(...)` → `Evidence.create(...)` in the tutorial since the content-addressed id is computed by `create()`, not accepted by direct construction in detector code (contributors following the old example passed validation by luck).
+- **`efterlev mcp list` command** referenced in CONTRIBUTING.md:215 doesn't exist (only `mcp serve` is implemented). **Decision: document the actual verification path (launch `mcp serve`, use the smoke-client harness); track `list` as a deferred convenience.**
+
+**Category B — dead code / stale numbers. Fix: delete the dead code; refresh the numbers.**
+
+- **`config.llm.fallback_model`** was declared in `config.py`, written at init time into `.efterlev/config.toml`, and read nowhere. `AnthropicClient` raises immediately on every transient error. Per the `config.py` module docstring's own policy — "keep it small; don't include settings that don't yet do anything" — this was a discipline violation. **Decision: remove the field; document retry+fallback as a deferred v1.x feature in LIMITATIONS.md. Breaking-change contract locked in by a new test that legacy config.toml files with `fallback_model` fail to load** — keeps a future edit from silently re-admitting the field without implementing the behavior.
+- **README's stale counts.** "Detectors (6)" at line 318 (actually 14), "279 passing" at line 372 (actually 344), "76 source files" (actually 94), three `pipx install efterlev` references (package is 0.0.1, private repo, no PyPI). **Decision: fix every count, caveat the pipx instruction, move the private-repo install instructions above the fold so first-screen readers don't hit the bad instruction before the correct one.**
+- **`docs/dual_horizon_plan.md:168`** asserted RFC-0024's September 2026 OSCAL floor as a motivating tailwind. NOTICE-0009 (2026-03-25) softened it and CR26 supersedes it for new authorizations — `DECISIONS.md` 2026-04-22 "Lock v1 scope" already captured the policy shift but this one-liner was not updated. **Decision: update the line to reference the softening and the DECISIONS entry.**
+
+**Category C — real functional gap, small cost to close. Fix: implement.**
+
+- **`efterlev provenance show`** rendered `content_ref` (blob path) at evidence leaves but did NOT load the blob and pretty-print the Evidence's `source_ref.file:line_start-line_end`. The whole point of the provenance demo rests on tracing a claim back to a specific Terraform line. **Decision: implement.** Walker now loads the evidence blob at walk time (`record_type="evidence"` only — claim blobs stay lazy) and `render_chain_text` appends `source=<file>:<start>-<end>`. Single-line refs collapse `5-5` to `5`. Non-Evidence evidence-typed records (init receipts, mcp_tool_call records) cleanly omit the line — defensive parsing doesn't fabricate content. Three new tests lock the behavior in.
+
+**Category D — reviewer's larger findings deliberately NOT acted on in this pass:**
+
+- **Implement secret redaction.** Not in this pass. It's the highest-leverage real improvement the reviewer named, but a careful implementation (per-detector fixtures, pattern library, hash-with-prefix replacement in content, pre-agent primitive hook) is its own design + coding session and landing a half-baked version is worse than naming the gap in LIMITATIONS and THREAT_MODEL. Tracked as the single highest-priority v1.x item.
+- **Implement retry+fallback and reintroduce `fallback_model`.** Same reasoning: dead code is a discipline violation *today*; re-introducing the field without the behavior repeats the error. Tracked.
+- **PyPI release.** Gated on the v1 public-repo opening per the locked plan. No engineering work in this pass.
+- **3PAO conversation.** Not engineering work; reviewer's finding stands as the single highest-leverage external step.
+- **POA&M output, boundary enumeration, manifest starter pack.** New-feature territory; outside the honesty-pass scope.
+
+**Category E — reviewer's findings I disagreed with or chose a narrower action on:**
+
+- **Reviewer finding 3 "DRAFT marker is CSS, not typed invariant."** Technically true: the rendered HTML carries the DRAFT class as a template string, not a Pydantic `Literal[True]`. But the machine-readable contract — `AttestationArtifact.provenance.requires_review: Literal[True]` — IS the authoritative output, and the HTML is a derived view. **Decision: no architectural change; add a focused test asserting the DRAFT marker appears in the rendered HTML.** Tracked as follow-up (small).
+- **Reviewer kill-list: delete `docs/dual_horizon_plan.md` bulk, governance paragraph, CMMC/IL roadmap mentions.** The reviewer's case is legitimate (over-documented surface for a pre-customer project) but this is scope-creep for a focused honesty pass. **Decision: not in this pass.** A separate "prune user-facing prose" commit can land after the honesty fixes settle; rushing both at once risks editing the wrong things.
+
+**Verification:**
+
+- 348 tests pass (+4 across the honesty pass: 1 legacy-config-rejects, 3 provenance-source-ref-rendering). ruff + mypy clean across 94 source files.
+- No new code landed that was not motivated by a specific verified finding.
+
+**Process observation for future reviews:**
+
+- External grep-level audits catch exactly the failure mode Efterlev commits to preventing ("docs claim code that doesn't exist"). The best response is to close the gap honestly in the direction the product's own discipline points: prefer deleting aspirational claims over implementing under pressure; when implementation IS the right call (provenance walker), keep the scope tight and test-covered; document the deferred items somewhere a user will find them (LIMITATIONS.md), not a changelog nobody reads.
+- Four commits on `review-followup-honesty` branch: `24b8b2b` docs-vs-code pass, `f0567fa` remove `fallback_model`, `69873a0` provenance walker source-ref, [this entry + doc sync].
+
+**Deferred (ranked by ICP leverage):**
+
+- Secret redaction implementation (v1.x) — biggest real ICP-trust item.
+- Retry + Opus-to-Sonnet fallback (v1.x) — biggest real reliability item.
+- Store-write-time `validate_claim_provenance` primitive (defense-in-depth, v1.x).
+- `efterlev mcp list` subcommand (convenience, v1.x).
+- Prose-pruning pass on `docs/dual_horizon_plan.md` + governance language in README + CONTRIBUTING (the reviewer's kill-list).
+- DRAFT-marker-in-HTML regression test (small).
+- 3PAO conversation (not engineering — highest-leverage external step).
+- POA&M output primitive (new feature).
+- Boundary-enumeration manifest starter pack (new feature).
+- PyPI release + sigstore signing (gated on v1 public-repo opening).
+
+---
+
 
 
 ```
