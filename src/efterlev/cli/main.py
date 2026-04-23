@@ -136,15 +136,39 @@ def scan(
         "--target",
         help="Path to the repo to scan. Defaults to the current directory.",
     ),
+    plan: Path | None = typer.Option(
+        None,
+        "--plan",
+        help=(
+            "Path to a `terraform show -json <plan>` output file. When supplied, "
+            "resources are read from the resolved plan instead of parsed from .tf "
+            "files — exposes module `for_each` expansion and resolved values. "
+            "Mutually exclusive with HCL-directory scanning (both modes still "
+            "load manifests from `--target`)."
+        ),
+    ),
 ) -> None:
-    """Run all applicable detectors and load Evidence Manifests under the target."""
+    """Run all applicable detectors and load Evidence Manifests under the target.
+
+    By default scans `.tf` files under `--target` via HCL parsing. Supply
+    `--plan FILE` to instead scan a pre-generated Terraform plan JSON —
+    the recommended mode for CI because module expansion and resolved
+    values (jsonencode, variable references, for_each) are fully visible.
+    See DECISIONS 2026-04-22 "Design: Terraform Plan JSON support" for
+    the trust-posture call.
+    """
     from efterlev.errors import DetectorError, ManifestError
     from efterlev.frmr.loader import FrmrDocument
     from efterlev.primitives.evidence import (
         LoadEvidenceManifestsInput,
         load_evidence_manifests,
     )
-    from efterlev.primitives.scan import ScanTerraformInput, scan_terraform
+    from efterlev.primitives.scan import (
+        ScanTerraformInput,
+        ScanTerraformPlanInput,
+        scan_terraform,
+        scan_terraform_plan,
+    )
     from efterlev.provenance import ProvenanceStore, active_store
 
     root = target.resolve()
@@ -153,6 +177,13 @@ def scan(
             f"error: no `.efterlev/` directory under {root}. Run `efterlev init` first.",
             err=True,
         )
+        raise typer.Exit(code=1)
+
+    # --plan is a dedicated mode; we don't try to scan both HCL + plan in
+    # the same invocation (would double-emit evidence).
+    plan_path = plan.resolve() if plan is not None else None
+    if plan_path is not None and not plan_path.is_file():
+        typer.echo(f"error: --plan file not found: {plan_path}", err=True)
         raise typer.Exit(code=1)
 
     # KSI→controls mapping, derived from the cached FRMR document the workspace
@@ -177,7 +208,12 @@ def scan(
 
     try:
         with ProvenanceStore(root) as store, active_store(store):
-            scan_result = scan_terraform(ScanTerraformInput(target_dir=root))
+            if plan_path is not None:
+                scan_result = scan_terraform_plan(
+                    ScanTerraformPlanInput(plan_file=plan_path, target_root=root)
+                )
+            else:
+                scan_result = scan_terraform(ScanTerraformInput(target_dir=root))
             manifest_result = load_evidence_manifests(
                 LoadEvidenceManifestsInput(
                     manifest_dir=manifest_dir,
@@ -190,7 +226,8 @@ def scan(
         raise typer.Exit(code=1) from e
 
     total_evidence = scan_result.evidence_count + manifest_result.evidence_count
-    typer.echo(f"Scanned {root}")
+    scan_mode = f"plan {plan_path}" if plan_path is not None else str(root)
+    typer.echo(f"Scanned {scan_mode}")
     typer.echo(f"  resources parsed:    {scan_result.resources_parsed}")
     typer.echo(f"  detectors run:       {scan_result.detectors_run}")
     typer.echo(f"  manifest files:      {manifest_result.files_found}")

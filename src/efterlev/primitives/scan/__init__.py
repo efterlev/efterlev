@@ -12,5 +12,15 @@ from efterlev.primitives.scan.scan_terraform import (
     ScanTerraformOutput,
     scan_terraform,
 )
+from efterlev.primitives.scan.scan_terraform_plan import (
+    ScanTerraformPlanInput,
+    scan_terraform_plan,
+)
 
-__all__ = ["ScanTerraformInput", "ScanTerraformOutput", "scan_terraform"]
+__all__ = [
+    "ScanTerraformInput",
+    "ScanTerraformOutput",
+    "ScanTerraformPlanInput",
+    "scan_terraform",
+    "scan_terraform_plan",
+]
