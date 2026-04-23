@@ -29,6 +29,17 @@ from efterlev.models import Evidence, Indicator, SourceRef
 from efterlev.provenance import ProvenanceStore, active_store
 
 
+def _persist_evidence(store: ProvenanceStore, evidence: list[Evidence]) -> None:
+    """Write each Evidence to the store so the 2026-04-23 store-level
+    `validate_claim_provenance` check has records to resolve against."""
+    for ev in evidence:
+        store.write_record(
+            payload=ev.model_dump(mode="json"),
+            record_type="evidence",
+            primitive=f"{ev.detector_id}@0.1.0",
+        )
+
+
 def _ev(resource: str = "logs", encryption: str = "absent") -> Evidence:
     return Evidence.create(
         detector_id="aws.encryption_s3_at_rest",
@@ -138,6 +149,7 @@ def test_remediation_agent_proposes_diff_and_persists_claim(tmp_path: Path) -> N
     stub = StubLLMClient(response_text=_canned_proposal(ev.evidence_id), model="stub-opus")
 
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = RemediationAgent(client=stub)
         proposal = agent.run(
             RemediationAgentInput(
@@ -209,6 +221,7 @@ def test_remediation_agent_returns_no_terraform_fix_when_diff_empty(tmp_path: Pa
     )
     stub = StubLLMClient(response_text=empty_response)
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = RemediationAgent(client=stub)
         proposal = agent.run(
             RemediationAgentInput(
@@ -296,6 +309,7 @@ def test_remediation_agent_fences_malicious_source_content(tmp_path: Path) -> No
     )
     stub = StubLLMClient(response_text=_canned_proposal(ev.evidence_id))
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = RemediationAgent(client=stub)
         agent.run(
             RemediationAgentInput(

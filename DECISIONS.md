@@ -1246,6 +1246,54 @@ Three categories of finding + decisions for each:
 
 ---
 
+## 2026-04-23 — Store-level `validate_claim_provenance` `[security]` `[provenance]` `[data-integrity]`
+
+**Context.** The 2026-04-23 external review caught `validate_claim_provenance` as docs-claimed-not-implemented (THREAT_MODEL.md T3, `models/claim.py` docstring, CONTRIBUTING.md). The honesty pass rewrote the docs to describe what actually enforces citation integrity: per-agent `_validate_cited_ids` helpers that parse the prompt's nonced fences and reject Claims citing sha256s that weren't in the prompt. Those helpers are the primary enforcement. The deferred addition was a SECONDARY check at store-write time — defense-in-depth for cases where the per-agent check doesn't run (agent bug, direct-store-write path, future non-fence-based agents). This entry records that implementation.
+
+**Decision (five interlocking calls):**
+
+1. **Hook at `ProvenanceStore.write_record` for `record_type="claim"` only.** Evidence records, primitive-output records, and other types skip the check — they ARE the citation sources, not the citers. Defense-in-depth specifically targets the citation-graph edges coming out of claims.
+2. **Dual-keyed lookup: derived_from ids resolve as `ProvenanceRecord.record_id` OR `Evidence.evidence_id` in a stored evidence payload.** Surfaced an architectural subtlety during implementation: `Evidence.evidence_id` (a content hash of the Evidence object) is NOT the same as `ProvenanceRecord.record_id` (a content hash of the envelope wrapping the Evidence when it was stored — different bytes because the envelope includes content_ref, timestamp, metadata). Gap Agent's derived_from carries evidence_ids (the fence ids the model saw); the dual-keyed check accepts both shapes without forcing an agent-code change.
+3. **Two-step lookup: fast path + scan.** Step 1 queries the record_id index with an IN-clause (O(1) round-trips regardless of derived_from length; SQLite uses the primary key index). Step 2 only runs for ids that didn't match in step 1 — scans evidence payload blobs for matching `evidence_id`. Worst case O(evidence × cites); in practice bounded by ~100 × 5 = 500 blob reads, acceptable for a defense-in-depth check run once per claim write.
+4. **Fail-before-insert: validation runs BEFORE `_put_blob` + SQL insert.** A rejected claim leaves the store state unchanged. No partial-write cleanup, no compensation logic, no orphaned blobs — the record simply doesn't exist. Confirmed by a test that asserts the store's record count is unchanged after a rejected claim write.
+5. **Existing tests updated to match real CLI flow.** Production code writes evidence to the store via `scan_terraform`'s `@detector` decorator before any agent runs. Tests that shortcut this (create `Evidence` in memory, invoke an agent directly without persisting evidence) failed the new validation — correctly, because the cited evidence didn't exist. Added a `_persist_evidence` helper to each affected test file and called it inside each store-active block. 13 test updates across test_agents.py, test_documentation_agent.py, test_remediation_agent.py. These tests now match real usage.
+
+**Rationale:**
+
+- Hook point at `write_record` is the single chokepoint for claim persistence. Putting the check there means no agent or future code path can persist a claim without running validation. Alternative (per-agent check calling an explicit `validate_claim_provenance(claim, store)` primitive) requires every agent and every future agent to remember to call it — fragile.
+- The dual-keyed lookup exists because the existing Gap Agent code uses `Evidence.evidence_id` in derived_from, but the walker's `get_record(id)` uses `record_id`. Making the walker work correctly for evidence_id cites is a different fix (walker-level enhancement). For now, the validator accepts both so legitimate chains don't false-fail. Flagged as follow-up: consider unifying on record_id in derived_from and refactoring the Gap Agent's citation plumbing. Bigger scope than this commit.
+- Two-step lookup amortizes the cost: common case (id resolves as record_id) hits a single indexed query. Rare case (id resolves only as evidence_id) pays the scan cost. The scan cost is bounded by the scan's evidence count, not by the store's total history, because only evidence records are scanned.
+- Fail-before-insert is the right posture for a security-boundary check. Alternative (insert-then-rollback) opens a window where a partially-written claim could be observed by a concurrent reader. Our threat model doesn't specifically call this out, but defense-in-depth by its nature prefers the stricter posture.
+- Updating existing tests to match real flow is the architecturally correct fix. Skipping validation "when the store is empty" or "when the caller didn't use an agent" would create a bypass attackers could exploit (or bugs would rely on). The tests that broke had been testing an impossible state.
+
+**Alternatives rejected:**
+
+- **Raise a warning instead of failing.** Rejected. Defense-in-depth means the CHECK is load-bearing; warnings get ignored and the check becomes advisory. A claim citing a fabricated id must not land.
+- **Validate `record_id` only; deprecate evidence_id-in-derived_from pattern.** Considered. Rejected for now because the Gap Agent's existing code and its tests use evidence_ids throughout. Migrating to record_ids is a bigger refactor — touches gap.py's claim construction, claim.py's derived_from semantics, the walker's lookup key, and reconstruct_classifications_from_store. Deferred as a follow-up; dual-keyed lookup is the pragmatic bridge.
+- **Cache the evidence_id → record_id mapping.** Considered. Rejected for now because typical claim writes are infrequent (1 per KSI classification = ~60 per scan, once per scan) and the step-2 scan only runs when step-1 misses. Cache adds complexity for a rarely-hit path. Revisit if real-world profiling shows it.
+- **Add a new primitive wrapping write_record.** Rejected. Hook at the store is simpler and covers every write path. A separate primitive would require every caller to opt in.
+- **Full refactor: move derived_from semantics to record_id-only.** Right answer in the long run; too much scope for a defense-in-depth commit.
+
+**Implementation landed in this commit:**
+
+- `src/efterlev/provenance/store.py` — `_validate_claim_derived_from(self, derived_from)` method with step-1 record_id query + step-2 evidence-payload scan. `write_record` calls it when `record_type="claim" and derived_from`. Docstring explains the dual-lookup rationale.
+- `tests/test_validate_claim_provenance.py` — 11 new tests: happy paths (evidence_id accepted, record_id accepted, empty derived_from accepted, mixed ids accepted, real Evidence objects roundtrip), unhappy paths (fabricated id rejected, partial resolution still raises, multi-miss count reported), insertion-atomicity (rejected claims don't mutate store), scope (evidence + finding record types bypass validation).
+- `tests/test_agents.py`, `tests/test_documentation_agent.py`, `tests/test_remediation_agent.py` — added `_persist_evidence` helper and 13 `_persist_evidence(store, [ev])` calls inside existing store-active blocks. Tests now match real CLI flow (scan → evidence in store → agent runs).
+- `LIMITATIONS.md` — `validate_claim_provenance` entry marked RESOLVED.
+
+**Verification:**
+
+- 460 tests pass (+11 new validation tests; existing agent tests updated to match real flow still pass). ruff + mypy clean on 96 source files.
+- Tested specifically: a claim citing a real evidence_id → accepted; a claim citing a sha256 that's in NO record → rejected with `ProvenanceError: do not resolve`; rejected claim doesn't appear in `store.iter_records()` afterwards; mixed (record_id + evidence_id) derived_from accepted.
+
+**Deferred:**
+
+- **Unify derived_from on record_id.** Refactor Gap Agent's claim construction, update walker's lookup, remove the dual-keyed fallback. Architecturally cleaner long-term; not urgent because dual-lookup works.
+- **Validate on non-claim record types** (finding, mapping, remediation) if those start carrying derived_from. Extend the check when a new record-type-with-citations appears.
+- **Performance profile the step-2 scan** at scale (thousands of evidence records). Unlikely to matter for the ICP but worth checking after a real customer hits a large scan.
+
+---
+
 
 
 ```

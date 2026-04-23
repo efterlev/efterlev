@@ -32,6 +32,17 @@ from efterlev.models import Evidence, Indicator, SourceRef
 from efterlev.provenance import ProvenanceStore, active_store
 
 
+def _persist_evidence(store: ProvenanceStore, evidence: list[Evidence]) -> None:
+    """Write each Evidence to the store so the 2026-04-23 store-level
+    `validate_claim_provenance` check has records to resolve against."""
+    for ev in evidence:
+        store.write_record(
+            payload=ev.model_dump(mode="json"),
+            record_type="evidence",
+            primitive=f"{ev.detector_id}@0.1.0",
+        )
+
+
 def _ev(ksi: str = "KSI-SVC-VRI", resource: str = "audit") -> Evidence:
     return Evidence.create(
         detector_id="aws.encryption_s3_at_rest",
@@ -91,6 +102,7 @@ def test_documentation_agent_drafts_attestation_for_each_eligible_ksi(
     ev = _ev()
     stub = StubLLMClient(response_text=_canned_narrative(ev.evidence_id), model="stub-opus")
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = DocumentationAgent(client=stub)
         report = agent.run(
             DocumentationAgentInput(
@@ -119,6 +131,7 @@ def test_documentation_agent_prompt_carries_ksi_classification_and_fenced_eviden
     ev = _ev()
     stub = StubLLMClient(response_text=_canned_narrative(ev.evidence_id))
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = DocumentationAgent(client=stub)
         agent.run(
             DocumentationAgentInput(
@@ -169,6 +182,7 @@ def test_documentation_agent_only_ksi_filters_to_named(tmp_path: Path) -> None:
     # Respond with the A narrative unconditionally; only A should get drafted.
     stub = StubLLMClient(response_text=_canned_narrative(ev_a.evidence_id))
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev_a, ev_b])
         agent = DocumentationAgent(client=stub)
         report = agent.run(
             DocumentationAgentInput(
@@ -283,6 +297,7 @@ def test_doc_agent_honors_cross_ksi_evidence_citations(tmp_path: Path) -> None:
 
     stub = StubLLMClient(response_text=_canned_narrative(cloudtrail_ev.evidence_id))
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [cloudtrail_ev])
         agent = DocumentationAgent(client=stub)
         report = agent.run(
             DocumentationAgentInput(
@@ -368,6 +383,7 @@ def test_reconstruct_classifications_from_store_roundtrips_gap_output(tmp_path: 
     )
     gap_stub = StubLLMClient(response_text=gap_response)
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         GapAgent(client=gap_stub).run(GapAgentInput(indicators=[_ind()], evidence=[ev]))
         rows = store.iter_claims_by_metadata_kind("ksi_classification")
 

@@ -54,6 +54,20 @@ def _mk_indicator(ksi_id: str = "KSI-SVC-VRI") -> Indicator:
     )
 
 
+def _persist_evidence(store: ProvenanceStore, evidence: list[Evidence]) -> None:
+    """Write each Evidence to the store so the 2026-04-23 store-level
+    `validate_claim_provenance` check has records to resolve against when
+    the agent writes its citation-carrying Claim. In real CLI flow this
+    happens via `scan_terraform`'s `@detector` decorator; tests mock the
+    scan step so they need to persist evidence explicitly."""
+    for ev in evidence:
+        store.write_record(
+            payload=ev.model_dump(mode="json"),
+            record_type="evidence",
+            primitive=f"{ev.detector_id}@0.1.0",
+        )
+
+
 # -- format_evidence_for_prompt --------------------------------------------
 
 
@@ -195,6 +209,7 @@ def test_gap_agent_returns_parsed_report_and_writes_claims(tmp_path: Path) -> No
     ev = _mk_evidence()
     stub = StubLLMClient(response_text=_canned_report(ev.evidence_id), model="stub-opus")
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [ev])
         agent = GapAgent(client=stub)
         report = agent.run(GapAgentInput(indicators=[_mk_indicator()], evidence=[ev]))
         record_ids = store.iter_records()
@@ -288,6 +303,7 @@ def test_gap_agent_sends_unmapped_evidence_into_unmapped_bucket_channel(
     )
     stub = StubLLMClient(response_text=response)
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [mapped, unmapped])
         agent = GapAgent(client=stub)
         report = agent.run(GapAgentInput(indicators=[_mk_indicator()], evidence=[mapped, unmapped]))
 
@@ -369,6 +385,7 @@ def test_gap_agent_flips_ksi_from_not_implemented_to_implemented_on_manifest(
     stub = StubLLMClient(response_text=response, model="stub-opus")
 
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [manifest_ev])
         agent = GapAgent(client=stub)
         report = agent.run(GapAgentInput(indicators=[indicator], evidence=[manifest_ev]))
 
@@ -443,6 +460,7 @@ def test_gap_agent_fences_evidence_with_malicious_content(tmp_path: Path) -> Non
     )
     stub = StubLLMClient(response_text=_canned_report(malicious.evidence_id))
     with ProvenanceStore(tmp_path) as store, active_store(store):
+        _persist_evidence(store, [malicious])
         agent = GapAgent(client=stub)
         agent.run(GapAgentInput(indicators=[_mk_indicator()], evidence=[malicious]))
 

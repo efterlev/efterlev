@@ -116,7 +116,20 @@ class ProvenanceStore:
 
         Atomically appends a receipt log line. Returns the finalized record (with
         its content-addressed `record_id` computed).
+
+        Defense-in-depth (2026-04-23, DECISIONS "Store-level validate_claim_provenance"):
+        for `record_type="claim"` records with non-empty `derived_from`, each
+        cited id is verified to resolve to an existing record in the store
+        BEFORE insertion. A cited id that doesn't resolve raises
+        `ProvenanceError` and the record is NOT written. Per-agent fence
+        validators remain the primary enforcement against the model-
+        hallucinated-an-id failure mode; this check is the secondary
+        enforcement against buggy-agent-code or direct-store-write paths
+        where the agent-level check doesn't run.
         """
+        if record_type == "claim" and derived_from:
+            self._validate_claim_derived_from(derived_from)
+
         content_ref = self._put_blob(payload)
         record = ProvenanceRecord.create(
             record_type=record_type,
@@ -170,6 +183,84 @@ class ProvenanceStore:
             tmp.write_bytes(data)
             tmp.rename(full)
         return str(rel.with_suffix(".json"))
+
+    def _validate_claim_derived_from(self, derived_from: list[str]) -> None:
+        """Verify every cited id resolves to something in the store. Raises on miss.
+
+        Called from `write_record` for Claim records with non-empty
+        `derived_from`. An id "resolves" if it matches EITHER:
+
+        1. a `ProvenanceRecord.record_id` directly, OR
+        2. an `Evidence.evidence_id` stored inside an evidence-typed
+           record's payload.
+
+        The dual-keyed check exists because `Evidence.evidence_id` is a
+        hash of Evidence content while `ProvenanceRecord.record_id` is a
+        hash of the envelope (content_ref + metadata + timestamp). When
+        the scan path stores Evidence, the two ids diverge — but the
+        agents that cite evidence work in the `Evidence.evidence_id`
+        namespace (that's the fence id the model sees). The validation
+        must accept both so legitimate chains don't false-fail.
+
+        A missing id is a serious integrity failure: it means the agent
+        or a direct store-write path produced a claim citing an id that
+        doesn't resolve, which the per-agent fence validators should
+        have caught first. Raising `ProvenanceError` here prevents the
+        bad record from ever being persisted.
+        """
+        if not derived_from:
+            return  # Defensive — caller should have checked; still cheap here.
+
+        # Step 1: try record_id match — cheap index lookup.
+        placeholders = ",".join("?" * len(derived_from))
+        # Placeholders are a constructed-count string of `?` — no
+        # user-controlled SQL fragments. IDs pass through parameterized
+        # binding. Safe despite the f-string.
+        query_by_record = (
+            f"SELECT record_id FROM provenance_records "
+            f"WHERE record_id IN ({placeholders})"
+        )
+        rows = self._conn.execute(query_by_record, derived_from).fetchall()
+        found: set[str] = {row[0] for row in rows}
+
+        still_missing = [rid for rid in derived_from if rid not in found]
+        if not still_missing:
+            return
+
+        # Step 2: for the remaining ids, scan evidence payloads for a
+        # matching Evidence.evidence_id. Evidence records are kept small
+        # and bounded by detector count * resources, so a full scan is
+        # acceptable for this defense-in-depth check. O(evidence * cites)
+        # in the worst case; in practice bounded by ~100 * 5.
+        evidence_rows = self._conn.execute(
+            "SELECT content_ref FROM provenance_records WHERE record_type = 'evidence'"
+        ).fetchall()
+        still_missing_set = set(still_missing)
+        for (content_ref,) in evidence_rows:
+            if not still_missing_set:
+                break
+            blob_path = self.blob_dir / content_ref
+            if not blob_path.exists():
+                continue
+            try:
+                payload = json.loads(blob_path.read_bytes())
+            except (OSError, json.JSONDecodeError):
+                continue
+            ev_id = payload.get("evidence_id") if isinstance(payload, dict) else None
+            if isinstance(ev_id, str) and ev_id in still_missing_set:
+                still_missing_set.discard(ev_id)
+
+        if still_missing_set:
+            first_miss = sorted(still_missing_set)[0]
+            raise ProvenanceError(
+                f"claim cites {len(still_missing_set)} evidence id(s) that do not "
+                f"resolve in the provenance store; first miss: {first_miss!r}. "
+                f"Checked both `ProvenanceRecord.record_id` and "
+                f"`Evidence.evidence_id` in stored evidence payloads. "
+                f"This typically means either the agent's fence validator is "
+                f"broken or a direct store-write bypassed the agent pipeline. "
+                f"No claim record was persisted."
+            )
 
     # --- reads ----------------------------------------------------------------
 

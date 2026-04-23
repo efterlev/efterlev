@@ -111,15 +111,16 @@ context-aware detection of high-entropy strings adjacent to
 secret-ish keys without known prefixes. Both are additive; the core
 security property (no structural secrets in prompts) holds today.
 
-**Store-write-time `validate_claim_provenance` primitive (planned for
-v1.x, defense-in-depth):** the per-agent citation validators
-(`_validate_cited_ids` in each agent) DO enforce that Claims cite only
-evidence the model saw in the prompt's nonced fences. They are the
-primary enforcement and they work. What is NOT implemented: a separate
-store-write-time check that verifies every `derived_from` id on a
-persisted Claim resolves to an actual record in the provenance store.
-That would close the gap that a bug in an agent or a direct store-write
-path could create. Tracked as follow-up.
+**Store-write-time `validate_claim_provenance`:** RESOLVED 2026-04-23.
+`ProvenanceStore.write_record` now runs a defense-in-depth check on
+every Claim write: each id in `derived_from` must resolve as either a
+`ProvenanceRecord.record_id` OR an `Evidence.evidence_id` in a stored
+evidence payload. Unresolvable ids raise `ProvenanceError` BEFORE
+insertion — the rejected record never lands. Per-agent fence validators
+remain the primary enforcement against model-hallucinated citations;
+this check is the secondary enforcement against agent bugs or
+direct-store-write paths. See `DECISIONS.md` 2026-04-23
+"Store-level validate_claim_provenance."
 
 **Retry + Opus-to-Sonnet fallback on transient errors:** RESOLVED
 2026-04-23. `AnthropicClient` now retries transient errors
