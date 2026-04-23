@@ -1,0 +1,31 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.14.8",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_s3_bucket.reports",
+          "mode": "managed",
+          "type": "aws_s3_bucket",
+          "name": "reports",
+          "values": {"bucket": "reports-bucket"}
+        },
+        {
+          "address": "aws_s3_bucket_public_access_block.reports",
+          "mode": "managed",
+          "type": "aws_s3_bucket_public_access_block",
+          "name": "reports",
+          "values": {
+            "bucket": "${aws_s3_bucket.reports.id}",
+            "block_public_acls": true,
+            "ignore_public_acls": true,
+            "block_public_policy": true,
+            "restrict_public_buckets": true
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {"root_module": {"module_calls": {}}}
+}
