@@ -1,0 +1,33 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.14.8",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_s3_bucket.payloads",
+          "mode": "managed",
+          "type": "aws_s3_bucket",
+          "name": "payloads",
+          "values": {"bucket": "payloads-prod"}
+        },
+        {
+          "address": "aws_s3_bucket_server_side_encryption_configuration.payloads_sse",
+          "mode": "managed",
+          "type": "aws_s3_bucket_server_side_encryption_configuration",
+          "name": "payloads_sse",
+          "values": {
+            "rule": [
+              {
+                "apply_server_side_encryption_by_default": [
+                  {"sse_algorithm": "aws:kms"}
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {"root_module": {"module_calls": {}}}
+}

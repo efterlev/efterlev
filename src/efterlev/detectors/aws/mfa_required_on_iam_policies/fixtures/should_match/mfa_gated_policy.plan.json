@@ -1,0 +1,21 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.14.8",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_iam_policy.admin_with_mfa",
+          "mode": "managed",
+          "type": "aws_iam_policy",
+          "name": "admin_with_mfa",
+          "values": {
+            "name": "admin-with-mfa",
+            "policy": "{\n  \"Version\": \"2012-10-17\",\n  \"Statement\": [\n    {\n      \"Effect\": \"Allow\",\n      \"Action\": \"*\",\n      \"Resource\": \"*\",\n      \"Condition\": {\n        \"Bool\": {\"aws:MultiFactorAuthPresent\": \"true\"}\n      }\n    }\n  ]\n}\n"
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {"root_module": {"module_calls": {}}}
+}

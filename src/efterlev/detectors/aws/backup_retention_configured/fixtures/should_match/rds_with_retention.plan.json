@@ -1,0 +1,25 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.14.8",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_db_instance.primary",
+          "mode": "managed",
+          "type": "aws_db_instance",
+          "name": "primary",
+          "values": {
+            "identifier": "app-primary",
+            "engine": "postgres",
+            "instance_class": "db.t3.micro",
+            "allocated_storage": 20,
+            "backup_retention_period": 7,
+            "skip_final_snapshot": false
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {"root_module": {"module_calls": {}}}
+}
