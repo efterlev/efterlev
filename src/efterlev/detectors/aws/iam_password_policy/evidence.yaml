@@ -1,0 +1,15 @@
+detector_id: aws.iam_password_policy
+
+evidence_shape:
+  resource_type: string              # always "aws_iam_account_password_policy"
+  resource_name: string              # the Terraform logical name
+  posture: enum                      # "sufficient" | "weak"
+  minimum_password_length: integer?  # null when unparseable
+  max_password_age: integer?
+  password_reuse_prevention: integer?
+  character_requirements:
+    require_uppercase_characters: bool?
+    require_lowercase_characters: bool?
+    require_numbers: bool?
+    require_symbols: bool?
+  gap: string?                       # present only when posture=weak; names the specific shortfalls

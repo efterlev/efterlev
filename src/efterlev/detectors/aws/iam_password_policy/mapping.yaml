@@ -1,0 +1,20 @@
+detector_id: aws.iam_password_policy
+
+# DECISIONS 2026-04-21 Option C: password policy is IA-5 territory, not
+# KSI-IAM-MFA. Although IA-5 is listed in KSI-IAM-MFA's controls array in
+# FRMR, claiming that KSI for a password-policy detector would conflate
+# "have password requirements" with "enforce phishing-resistant MFA" —
+# semantically different concerns.
+ksis: []
+
+controls:
+  - id: IA-5
+    enhancements: [IA-5(1)]
+    evidence_type: infrastructure
+    coverage: partial
+    notes: >
+      Infrastructure-layer evidence only. The detector confirms that an
+      account-level aws_iam_account_password_policy resource declares
+      length, character-class, age, and reuse-prevention settings. It
+      does NOT evidence per-user MFA, password hashing at the backend,
+      procedural enforcement of resets, or runtime state.
