@@ -316,6 +316,20 @@ class ProvenanceStore:
         ).fetchall()
         return [r[0] for r in rows]
 
+    def iter_record_refs(self) -> list[tuple[str, str]]:
+        """Return `(record_id, content_ref)` for every record, all types.
+
+        Used by `efterlev provenance verify` to walk the full content-
+        addressed chain and re-verify each blob's SHA-256 against the
+        path it's stored at. Returning `content_ref` saves the verifier
+        from re-querying per record.
+        """
+        rows = self._conn.execute(
+            "SELECT record_id, content_ref FROM provenance_records "
+            "ORDER BY timestamp, record_id"
+        ).fetchall()
+        return [(r[0], r[1]) for r in rows]
+
     def iter_evidence(self) -> list[tuple[str, dict[str, Any]]]:
         """Return `(record_id, evidence_payload)` for every detector-emitted record.
 

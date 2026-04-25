@@ -60,6 +60,13 @@ redaction_app = typer.Typer(
 )
 app.add_typer(redaction_app, name="redaction")
 
+detectors_app = typer.Typer(
+    name="detectors",
+    help="Inspect the registered detector library.",
+    no_args_is_help=True,
+)
+app.add_typer(detectors_app, name="detectors")
+
 
 def _stub(phase: str, command: str) -> None:
     """Raise a stub error with a clear phase pointer.
@@ -956,6 +963,79 @@ def provenance_show(
         raise typer.Exit(code=1) from e
 
 
+@provenance_app.command("verify")
+def provenance_verify(
+    target: Path = typer.Option(
+        Path("."),
+        "--target",
+        help="Repo containing the `.efterlev/` store. Defaults to the current directory.",
+    ),
+) -> None:
+    """Detect tampering in the local provenance store.
+
+    Backs the THREAT_MODEL.md T4 claim: "the provenance DB stores record
+    hashes; `efterlev provenance verify` detects mismatches." The store
+    is content-addressed (SHA-256 of canonical bytes), so any modification
+    to a blob changes its hash and breaks the `(record_id → content_ref →
+    file)` chain. This command walks every record, recomputes the
+    blob's SHA-256, and compares it to the hash embedded in the
+    sharded `content_ref` path (`xx/yy/xxyy<rest>.json`).
+
+    Exit 0 = every blob matches its declared hash. Exit 1 = at least
+    one mismatch (tampering, disk corruption, partial-write, etc.) or
+    a missing blob. Output names each affected record explicitly.
+    """
+    import hashlib
+
+    from efterlev.errors import ProvenanceError
+    from efterlev.provenance import ProvenanceStore
+
+    root = target.resolve()
+    if not (root / ".efterlev").is_dir():
+        typer.echo(
+            f"error: no `.efterlev/` directory under {root}. Run `efterlev init` first.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    findings: list[str] = []
+    record_count = 0
+    try:
+        with ProvenanceStore(root) as store:
+            for record_id, content_ref in store.iter_record_refs():
+                record_count += 1
+                blob_path = store.blob_dir / content_ref
+                if not blob_path.exists():
+                    findings.append(f"  ✗ {record_id}: blob missing at {content_ref}")
+                    continue
+                actual = hashlib.sha256(blob_path.read_bytes()).hexdigest()
+                # Sharded content_ref shape: 9a/20/9a205d96…json. Pull
+                # the embedded hash out of the filename stem.
+                expected = blob_path.stem
+                if actual != expected:
+                    findings.append(
+                        f"  ✗ {record_id}: blob hash {actual[:12]}… does not match "
+                        f"declared {expected[:12]}… (path: {content_ref})"
+                    )
+    except ProvenanceError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1) from e
+
+    typer.echo(f"verified {record_count} record(s)")
+    if findings:
+        typer.echo("")
+        typer.echo("MISMATCHES (tamper-evidence):")
+        for f in findings:
+            typer.echo(f)
+        typer.echo("")
+        typer.echo(
+            "  Each mismatch indicates either tampering, disk corruption, or a"
+            " partial write."
+        )
+        raise typer.Exit(code=1)
+    typer.echo("RESULT: clean. Every blob matches its content-addressed hash.")
+
+
 @mcp_app.command("serve")
 def mcp_serve() -> None:
     """Run the MCP stdio server exposing every registered tool.
@@ -1068,6 +1148,36 @@ def redaction_review(
         typer.echo(f"... {len(scan_order) - limit} earlier scan(s) not shown (--limit).")
     typer.echo("")
     typer.echo("Run `efterlev redaction review --scan-id <id>` for per-event detail.")
+
+
+@detectors_app.command("list")
+def detectors_list() -> None:
+    """List every detector registered with the runtime registry.
+
+    Promised by THREAT_MODEL.md as the path to inspect what's loaded —
+    "shows all loaded detectors, including third-party, before any scan
+    runs." Useful as a defense-in-depth check (detect a registration
+    regression like the 16-of-30 bug found 2026-04-25 dogfooding) and
+    as introspection for users adding third-party detectors.
+
+    Output is `<id>@<version>  <source>  ksis: ...  controls: ...`
+    sorted by detector id. Stable output shape; safe to grep / pipe.
+    """
+    import efterlev.detectors  # noqa: F401  (registration side-effect)
+    from efterlev.detectors.base import get_registry
+
+    specs = sorted(get_registry().values(), key=lambda s: s.id)
+    if not specs:
+        typer.echo("(no detectors registered)")
+        return
+    for spec in specs:
+        ksis = ", ".join(spec.ksis) if spec.ksis else "—"
+        controls = ", ".join(spec.controls) if spec.controls else "—"
+        typer.echo(f"  {spec.id}@{spec.version}  source={spec.source}")
+        typer.echo(f"      ksis:     {ksis}")
+        typer.echo(f"      controls: {controls}")
+    typer.echo("")
+    typer.echo(f"  total: {len(specs)} detectors")
 
 
 if __name__ == "__main__":

@@ -25,7 +25,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from efterlev.agents.base import (
     Agent,
@@ -51,7 +51,22 @@ class GapAgentInput(BaseModel):
 
 
 class KsiClassification(BaseModel):
-    """One KSI's classification as returned by the Gap Agent."""
+    """One KSI's classification as returned by the Gap Agent.
+
+    Structural invariant: `status="implemented"` and `status="partial"` MUST
+    cite at least one evidence id. The fence-citation validator
+    (`_validate_cited_ids` below) catches IDs the model fabricated against
+    the prompt's nonced fences — but it never fires on zero citations
+    (there's nothing to validate against). A model that returns
+    `status="implemented"` with `evidence_ids=[]` is making an unfounded
+    positive claim; reject it at the model layer so the agent's persistence
+    path never sees it.
+
+    `not_implemented` and `not_applicable` are exempt — those are honest
+    declarations that the evidence is *missing* / *out of scope*, and the
+    rationale is the cited record. Requiring evidence citations on those
+    would force the model to fabricate them.
+    """
 
     model_config = ConfigDict(frozen=True)
 
@@ -59,6 +74,16 @@ class KsiClassification(BaseModel):
     status: GapStatus
     rationale: str
     evidence_ids: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _positive_status_requires_evidence(self) -> KsiClassification:
+        if self.status in ("implemented", "partial") and not self.evidence_ids:
+            raise ValueError(
+                f"KSI {self.ksi_id}: status={self.status!r} requires at least one "
+                f"evidence_id citation. A positive classification with no cited "
+                f"evidence is an unfounded claim and is rejected at the model layer."
+            )
+        return self
 
 
 class UnmappedFinding(BaseModel):

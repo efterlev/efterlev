@@ -45,6 +45,60 @@ def test_mcp_serve_command_is_registered() -> None:
     assert "MCP stdio server" in result.output
 
 
+def test_detectors_list_lists_all_thirty_detectors(tmp_path: pytest.TempPathFactory) -> None:
+    """`efterlev detectors list` was promised by THREAT_MODEL.md but
+    didn't exist before 2026-04-25 (round-2 review finding). Now it
+    does — this test locks the contract.
+    """
+    result = runner.invoke(app, ["detectors", "list"])
+    assert result.exit_code == 0
+    # 30 detectors per the A4 catalog (see tests/test_smoke.py:
+    # test_every_detector_folder_registers).
+    assert "total: 30 detectors" in result.output
+    # Spot-check a couple of detector ids appear.
+    assert "aws.encryption_s3_at_rest" in result.output
+    assert "aws.access_analyzer_enabled" in result.output
+
+
+def test_provenance_verify_clean_store_passes(tmp_path: pytest.TempPathFactory) -> None:
+    """`efterlev provenance verify` was claimed by THREAT_MODEL.md as
+    the tamper-detection path. The earlier reality: the command did
+    not exist. Now it does; this test locks the clean-store path.
+    """
+    init_result = runner.invoke(app, ["init", "--target", str(tmp_path)])
+    assert init_result.exit_code == 0
+    # Empty store — no records to verify against, but the command
+    # must still exit cleanly.
+    result = runner.invoke(app, ["provenance", "verify", "--target", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "RESULT: clean" in result.output
+
+
+def test_provenance_verify_detects_tampered_blob(tmp_path: Path) -> None:
+    """A modified blob must surface as a mismatch finding.
+
+    Walks the storage path: write a record, mutate its blob on disk,
+    rerun verify, assert the mismatch is reported and exit code is 1.
+    """
+    from efterlev.provenance import ProvenanceStore
+
+    with ProvenanceStore(tmp_path) as store:
+        record = store.write_record(
+            payload={"detector_id": "aws.test", "content": {"x": 1}},
+            record_type="evidence",
+            primitive="scan_terraform@0.1.0",
+        )
+        blob_path = store.blob_dir / record.content_ref
+
+    # Tamper: rewrite the blob with different content.
+    blob_path.write_text('{"detector_id": "aws.test", "content": {"x": 2}}')
+
+    result = runner.invoke(app, ["provenance", "verify", "--target", str(tmp_path)])
+    assert result.exit_code == 1
+    assert "MISMATCHES" in result.output
+    assert record.record_id in result.output
+
+
 def test_agent_gap_missing_efterlev_dir_prints_error(tmp_path: pytest.TempPathFactory) -> None:
     result = runner.invoke(app, ["agent", "gap", "--target", str(tmp_path)])
     assert result.exit_code == 1

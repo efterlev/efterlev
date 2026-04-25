@@ -20,9 +20,57 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+from pydantic import ValidationError
+
 from efterlev.agents import GapReport
 from efterlev.agents.gap import KsiClassification, UnmappedFinding
 from efterlev.reports import render_gap_report_html
+
+# --- KsiClassification model invariants ----------------------------------------
+
+
+def test_implemented_classification_with_no_evidence_ids_is_rejected() -> None:
+    """Defense-in-depth alongside the fence-citation validator.
+
+    The fence validator (`_validate_cited_ids`) catches IDs the model
+    fabricated against the prompt's nonced fences — but it never fires
+    on zero citations because there's nothing to validate against. A
+    model that returns status="implemented" with evidence_ids=[] is
+    making an unfounded positive claim; reject at the model layer.
+    """
+    with pytest.raises(ValidationError, match="requires at least one evidence_id"):
+        KsiClassification(
+            ksi_id="KSI-SVC-SNT", status="implemented", rationale="ok", evidence_ids=[]
+        )
+
+
+def test_partial_classification_with_no_evidence_ids_is_rejected() -> None:
+    with pytest.raises(ValidationError, match="requires at least one evidence_id"):
+        KsiClassification(
+            ksi_id="KSI-IAM-MFA", status="partial", rationale="ok", evidence_ids=[]
+        )
+
+
+def test_not_implemented_classification_may_have_no_evidence_ids() -> None:
+    """`not_implemented` is exempt — it's an honest declaration that the
+    evidence is missing. Forcing citations would push the model to
+    fabricate them.
+    """
+    clf = KsiClassification(
+        ksi_id="KSI-MLA-LET", status="not_implemented", rationale="no evidence", evidence_ids=[]
+    )
+    assert clf.evidence_ids == []
+
+
+def test_not_applicable_classification_may_have_no_evidence_ids() -> None:
+    clf = KsiClassification(
+        ksi_id="KSI-IAM-USR", status="not_applicable", rationale="out of scope", evidence_ids=[]
+    )
+    assert clf.evidence_ids == []
+
+
+# --- HTML rendering ------------------------------------------------------------
 
 
 def _report(
@@ -72,13 +120,23 @@ def test_classification_cards_carry_claim_class_and_draft_banner() -> None:
 
 
 def test_status_pill_classes_reflect_classification_status() -> None:
+    # Positive statuses require at least one evidence_id citation per the
+    # KsiClassification model invariant (gap.py 2026-04-25). The
+    # placeholder hash is ignored by render_gap_report_html — this test
+    # only cares about the status pill CSS classes.
+    placeholder = "sha256:" + "0" * 64
     classifications = [
         KsiClassification(
-            ksi_id="KSI-SVC-SNT", status="implemented", rationale="ok", evidence_ids=[]
+            ksi_id="KSI-SVC-SNT", status="implemented", rationale="ok",
+            evidence_ids=[placeholder],
         ),
-        KsiClassification(ksi_id="KSI-IAM-MFA", status="partial", rationale="ok", evidence_ids=[]),
         KsiClassification(
-            ksi_id="KSI-MLA-LET", status="not_implemented", rationale="ok", evidence_ids=[]
+            ksi_id="KSI-IAM-MFA", status="partial", rationale="ok",
+            evidence_ids=[placeholder],
+        ),
+        KsiClassification(
+            ksi_id="KSI-MLA-LET", status="not_implemented", rationale="ok",
+            evidence_ids=[],
         ),
     ]
     html = render_gap_report_html(_report(classifications=classifications), **_baseline_kwargs())
@@ -133,7 +191,7 @@ def test_html_escapes_html_in_rationale() -> None:
         ksi_id="KSI-SVC-SNT",
         status="partial",
         rationale="<script>alert('xss')</script> malicious",
-        evidence_ids=[],
+        evidence_ids=["sha256:" + "0" * 64],
     )
     html = render_gap_report_html(_report(classifications=[clf]), **_baseline_kwargs())
     assert "<script>alert" not in html

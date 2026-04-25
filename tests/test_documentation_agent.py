@@ -69,6 +69,12 @@ def _clf(
     status: str = "partial",
     evidence_ids: list[str] | None = None,
 ) -> KsiClassification:
+    # KsiClassification's positive-status-requires-evidence invariant
+    # (gap.py 2026-04-25): implemented/partial must cite ≥1 evidence_id.
+    # Default a placeholder when callers don't override and status is
+    # positive — keeps fixture ergonomics while honoring the invariant.
+    if evidence_ids is None and status in ("implemented", "partial"):
+        evidence_ids = ["sha256:" + "0" * 64]
     return KsiClassification(
         ksi_id=ksi_id,
         status=status,  # type: ignore[arg-type]
