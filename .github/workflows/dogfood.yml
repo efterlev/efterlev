@@ -1,0 +1,60 @@
+# Dogfood Efterlev against pinned real-world Terraform codebases.
+#
+# What this catches that the unit-test suite cannot:
+#   - Detector registration silently dropping (the 16-of-30 bug found
+#     2026-04-25 dogfooding terraform-aws-vpc).
+#   - Parser regressions on real terraform — synthetic fixtures don't
+#     have the dynamic blocks, for-expressions, and module composition
+#     real codebases rely on.
+#   - python-hcl2 dependency bumps introducing new parse-failure modes.
+#   - A detector going silent on inputs it used to fire on.
+#
+# Why pinned SHAs: upstream churn is irrelevant to "did Efterlev
+# regress?" — we want stable inputs that fail only when our code
+# changes the answer.
+#
+# Schedule: on push to main + nightly cron + manual. NOT on every PR
+# — cloning seven repos takes ~30s and adds noise to PR feedback.
+# Regressions surface within 24h via the cron, and can be reproduced
+# locally with `bash scripts/dogfood-real-codebases.sh`.
+
+name: dogfood
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/efterlev/detectors/**'
+      - 'src/efterlev/terraform/**'
+      - 'src/efterlev/primitives/scan/**'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - 'scripts/dogfood-real-codebases.sh'
+      - '.github/workflows/dogfood.yml'
+  schedule:
+    # 09:00 UTC — after most terraform-aws-modules upstream commits land.
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dogfood:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Install Efterlev
+        run: uv sync --extra dev
+
+      - name: Run dogfood against pinned real-world codebases
+        run: bash scripts/dogfood-real-codebases.sh
