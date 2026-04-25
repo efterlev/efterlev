@@ -1,0 +1,74 @@
+# Allowlist entries for scripts/launch-grep-scrub.sh.
+#
+# One regex per line, matching against the `<file>:<line>:<text>` shape
+# git grep produces. Comment lines (starting with #) and blank lines are
+# skipped. Each entry MUST have a comment above it explaining why the
+# match is benign.
+
+# DECISIONS.md and SPEC files contain the historical record of the
+# closed-source-through-v1 lock and its rescission. These are
+# legitimate references to the pre-2026-04-23 state of the project.
+^DECISIONS\.md:.*(closed-source|closed-development|NDA|external contributions paused|v1 public-repo opening|lhassa8)
+^docs/specs/.*\.md:.*(closed-source|closed-development|NDA|external contributions paused|v1 public-repo opening|lhassa8)
+^CLAUDE\.md:.*(closed-source|closed-development|NDA)
+
+# docs/launch/* are the launch-rehearsal artifacts. They legitimately
+# reference the pre-launch state and historical context.
+^docs/launch/.*\.md:.*(closed-source|closed-development|NDA|lhassa8|private)
+
+# CONTRIBUTING.md historical CoC formal-process note legitimately
+# discusses what's coming pre-launch.
+^CONTRIBUTING\.md:.*(closed-source|NDA)
+
+# README "Status" blockquote and Install section legitimately reference
+# the pre-launch state.
+^README\.md:.*(pre-launch private|closed-source-through-v1|closed-source lock)
+
+# THREAT_MODEL.md T8 "malicious PR" mitigation legitimately discusses
+# the closed-source-era posture for context.
+^THREAT_MODEL\.md:.*(closed-source|NDA|private)
+
+# LIMITATIONS.md install-gate language legitimately references the
+# rescinded gating to provide historical context.
+^LIMITATIONS\.md:.*(closed-source lock|private)
+
+# docs/dual_horizon_plan.md and docs/icp.md carry historical
+# scope-lock language for traceability.
+^docs/dual_horizon_plan\.md:.*(closed-source|closed-development|NDA)
+^docs/icp\.md:.*(closed-source|NDA)
+
+# scan-action repo source ref carries the NDA-era acceptance criteria
+# in the SPEC-07 comment block. Legitimate historical context.
+^docs/specs/SPEC-07\.md:.*(NDA|closed-source)
+
+# docs/RELEASE.md release-notes template references the verification
+# instructions including signing identity strings.
+^docs/RELEASE\.md:.*(efterlev/efterlev|closed-source|private)
+
+# Historical references in COMPETITIVE_LANDSCAPE.md to competitor
+# positioning may legitimately mention "private" companies, etc.
+^COMPETITIVE_LANDSCAPE\.md:.*\bprivate\b
+
+# Stale-test-count check is intentionally aggressive. The launch
+# runbook (SPEC-56.2) calls out updating these in README.md before
+# flipping public; allowlist any historical references in DECISIONS.md
+# and SPEC files where the count was captured at the time.
+^DECISIONS\.md:.*(279|344|461|496|529|552|575|602) (test|passing)
+^docs/specs/.*\.md:.*(279|344|461|496|529|552|575|602) (test|passing)
+
+# "Confidentiality" appears legitimately in CIA-triad and FRMR
+# definitions (SC-28 mapping precedent, transmission-confidentiality
+# KSI, FRMR security-event definitions). The internal_only_markers
+# check is intended for DND/confidential document headers, not for
+# the technical vocabulary of compliance frameworks.
+.*[Cc]onfidentiality
+^DECISIONS\.md:.*[Cc]onfidential
+^LIMITATIONS\.md:.*[Cc]onfidential
+^CLAUDE\.md:.*(279|344|461|496|529|552|575|602) (test|passing)
+
+# Vendored NIST 800-53 Rev 5 catalog contains "confidential" in
+# legitimate compliance-framework prose (e.g., AC-16 enhancement
+# discussing classification labels: "top secret, secret, confidential,
+# controlled unclassified"). This is upstream NIST content, not a
+# document-confidentiality marker.
+^catalogs/nist/.*\.json:.*[Cc]onfidential

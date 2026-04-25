@@ -57,7 +57,7 @@ jobs:
           # Install Efterlev from the same SHA the Action source repo is
           # pinned to. When this workflow is copied into a consumer repo,
           # swap this line for `pipx install efterlev` (post-PyPI release)
-          # or `pip install "git+https://github.com/lhassa8/Efterlev.git@main"`.
+          # or `pip install "git+https://github.com/efterlev/efterlev.git@main"`.
           uv sync --extra dev
 
       - name: Determine scan target
