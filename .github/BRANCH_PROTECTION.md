@@ -20,12 +20,29 @@ Apply all of these on the `main` branch via GitHub UI → Settings → Branches 
 
 - ✅ Require status checks to pass before merging
   - ✅ Require branches to be up to date before merging
-  - Required checks (names must match CI job names exactly):
-    - `tests` (pytest)
-    - `ruff` (lint + format)
-    - `mypy` (type check)
-    - `dco-check` (DCO sign-off verification — the DCO GitHub App's check)
-    - additional checks added as they land (bandit/semgrep per SPEC-36, etc.)
+  - Required checks (names must match the **job display names** exactly as
+    they appear in the Checks tab of any PR):
+    - `lint, type-check, test` — the single combined job in `.github/workflows/ci.yml`
+      that runs `ruff check`, `ruff format --check`, `mypy src/efterlev`, and
+      `pytest`. One job rather than four because the venv setup amortizes
+      cleanly and CI feedback is faster.
+    - `check-docs` — the doc-vs-code drift checker in
+      `.github/workflows/check-docs.yml` (numeric claims, CLI references).
+    - `DCO` — emitted by the DCO GitHub App on every PR commit; confirms the
+      `Signed-off-by:` trailer matches the commit author.
+    - Optional / consider adding once they have a track record on PRs:
+      `pip-audit`, `bandit`, `semgrep`, `analyze (python)` from
+      `.github/workflows/ci-security.yml`. Held off for now because the
+      security scanners can have intermittent infrastructure issues; making
+      them PR-blocking before observing a few weeks of runs risks false-fail
+      friction.
+
+  **Note on autocomplete:** GitHub's branch-protection UI auto-suggests
+  status check names from checks that have run on the repo recently. If
+  `lint, type-check, test` isn't in the dropdown yet, push any branch + open
+  a draft PR to trigger CI once, then return to branch protection — the
+  name will appear. Or type the exact name; GitHub accepts unsuggested
+  names and binds when CI starts emitting them.
 
 ### Require signed commits
 
