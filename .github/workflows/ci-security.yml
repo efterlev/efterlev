@@ -97,6 +97,19 @@ jobs:
   codeql:
     name: CodeQL (Python)
     runs-on: ubuntu-latest
+    # CodeQL's results-upload to the Security tab requires the repo to
+    # have Code Scanning enabled, which on private repos costs extra
+    # (GitHub Advanced Security) on Pro/Team plans. On a public repo
+    # Code Scanning is free for all plans. The repo is currently
+    # pre-launch private, so the upload step will 403 with "Resource
+    # not accessible by integration" — that's the plan limitation, not
+    # a real failure of the analysis.
+    #
+    # `continue-on-error: true` keeps the job non-blocking until the
+    # repo flips public. After flip, the upload will work and we can
+    # remove this attribute. Tracked as a maintainer-action item in
+    # the launch runbook (post-flip cleanup).
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v5
       - uses: github/codeql-action/init@v3

@@ -30,6 +30,8 @@ Hour-by-hour sequence for flipping Efterlev public. Tick each checkbox as you go
 - [ ] Watch the run: `gh run watch --repo efterlev/efterlev`. Build + deploy must succeed.
 - [ ] Confirm `efterlev.com` resolves to the docs site (DNS-propagation can lag — give it up to 10 min).
 - [ ] Enable GitHub Security Advisories on the now-public repo (Settings → Security → Code security and analysis).
+- [ ] **Enable Code Scanning** (same Settings page). Free on public repos for all plans; on private repos requires GitHub Advanced Security (paid). Was deferred during pre-launch private state.
+- [ ] Remove `continue-on-error: true` from the CodeQL job in `.github/workflows/ci-security.yml`. The flag was added pre-flip because the upload-to-security-tab step 403s on private repos without Advanced Security. Public + Code Scanning enabled = upload works = no need for the soft-fail.
 
 ## Launch hour 1 — Hacker News post
 
