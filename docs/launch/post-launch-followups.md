@@ -1,0 +1,234 @@
+# Post-launch follow-ups
+
+The launch-readiness work for v0.1.0 deliberately deferred several items to keep launch surface area tight. This document is the canonical tracker so nothing gets lost. Items here are NOT launch blockers — they are real work scheduled for v0.1.x (patch follow-ups) or v0.2.0 (next minor) once the launch is stable.
+
+Each entry names the deferral, the reason, the owner, and a target window. As items land, move them to the **Done** section at the bottom with their resolution.
+
+---
+
+## v0.1.x — patch-follow-ups (within first 30 days)
+
+### Smoke matrix re-blocking
+
+**Item:** `release-smoke.yml` is currently non-blocking (`continue-on-error: true` on the matrix job). Make it strictly required again.
+
+**Why deferred:** during the v0.0.1-rc.[1–4] dry-runs (2026-04-26), the matrix surfaced four real workflow bugs (TestPyPI extra-index-url, uv prerelease policy, version-string shape, uv cache `--refresh`). Round 4 STILL failed despite all four fixes landing — the failure mode mutated to `setup-uv`'s cache-restore reading stale TestPyPI simple-index metadata in a way `--refresh` didn't fully bypass. Local install with identical uv version + flags worked first try. Conclusion: the matrix is fighting GitHub-CI infrastructure quirks, not product bugs.
+
+**Resolution path:**
+1. Watch the actual `release-smoke.yml` run on the real `v0.1.0` tag. If it surfaces real platform-specific install bugs, fix those first.
+2. Likely fix: change the matrix's `setup-uv` step to `enable-cache: false`, OR set `UV_NO_CACHE=1` env var, OR add a longer initial wait before the first install attempt to give TestPyPI's CDN time to propagate. Test in isolation on a feature branch by tagging a test rc and watching only that workflow.
+3. Once stable for two consecutive release tags, remove `continue-on-error: true`.
+
+**Owner:** Maintainer.
+
+**Target:** within 30 days post-launch; soft target for inclusion in v0.1.1 or v0.1.2.
+
+**Cross-references:** `docs/launch/runbook.md` 30-day success-gates section, `release-smoke.yml` job-level comment.
+
+---
+
+### Workflow comment fix on `release-pypi.yml`
+
+**Item:** the workflow's leading comment used to say "Repository name: `efterlev`" (lowercase) when the repo was actually `efterlev/Efterlev` (capital E). Repo was renamed lowercase 2026-04-26 so the comment is now correct, BUT the case-sensitivity nuance isn't called out in the comment itself.
+
+**Status:** partially-addressed in PR #12 (2026-04-26). Verify the wording is clear to a future maintainer reading the comment fresh.
+
+**Owner:** Maintainer.
+
+**Target:** when next touching the workflow.
+
+---
+
+### CodeQL upload re-enabled
+
+**Item:** `ci-security.yml`'s CodeQL job has `continue-on-error: true` because the upload-to-Security-tab step 403s on private repos without GitHub Advanced Security.
+
+**Resolution at launch hour:** part of the public-flip sequence already in `docs/launch/runbook.md`:
+1. Enable Code Scanning (Settings → Code security and analysis) on the now-public repo.
+2. Remove `continue-on-error: true` from the CodeQL job.
+
+**Owner:** Maintainer (does this at launch hour 0).
+
+**Target:** launch day.
+
+---
+
+### Re-add `pypi` environment required reviewer
+
+**Item:** the `pypi` GitHub environment was configured with a deployment-tag-pattern restriction (`v[0-9]*.[0-9]*.[0-9]*`) but no required-reviewer because the GitHub-Team plan didn't expose required-reviewers on private repos.
+
+**Status:** plan upgraded to GitHub Team mid-launch-prep, which DID unlock required-reviewers on private. The maintainer can add themselves as `pypi` env reviewer if desired. Currently NOT configured because we never got back to it after the upgrade.
+
+**Owner:** Maintainer.
+
+**Target:** before first real `v0.1.0` tag push (manual gate before real-PyPI publish).
+
+---
+
+## v0.2.0+ — minor-release follow-ups
+
+### Docker Hub republishing via DSOS
+
+**Item:** `release-container.yml` was configured to publish to both `ghcr.io` and `docker.io` originally. Docker Hub publish was dropped at v0.1.0 because Docker Hub eliminated the free organization tier in 2024 (paid Team is $15/seat/month — overhead a solo-maintainer OSS project doesn't need at launch).
+
+**Resolution path:** apply for the [Docker-Sponsored Open Source](https://www.docker.com/community/open-source/application/) program. Free tier for verified OSS projects, ~2-week application review. Once approved, restore the docker.io publish step in `release-container.yml`, restore the docker-dockerhub cells in `release-smoke.yml`, restore the `docker.io/efterlev/efterlev` reference in `scripts/verify-release.sh` and `docs/RELEASE.md`.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0 or earlier.
+
+**Cross-references:** `release-container.yml` leading comment, `LIMITATIONS.md` Docker Hub stanza.
+
+---
+
+### npm namespace utilization
+
+**Item:** the `efterlev` npm namespace was claimed during pre-launch as a placeholder (no published package). Decide whether to publish anything there (e.g., a future JS-side companion library, a JSDOM-based detector, etc.) or release the namespace.
+
+**Owner:** Maintainer judgment call.
+
+**Target:** within first six months — release or use, don't squat indefinitely.
+
+---
+
+### `attestation_format_version` bump policy enforcement
+
+**Item:** `info.attestation_format_version: "1"` was added per SPEC-57.3 with a documented bump policy. No automated check enforces the policy — a maintainer making a breaking change to `AttestationArtifact` might forget to bump.
+
+**Resolution path:** add a `scripts/check-format-version.py` (similar to `scripts/check-docs.py`) that diffs the current schema against the last-tagged-version's schema and fails if the schema changed without a version bump. CI workflow runs it on every PR.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+---
+
+### SPEC-57.4 — narrative-template consistency
+
+**Item:** Documentation-Agent narratives vary in length and structure across status classes. SPEC-57.4 (deferred from SPEC-57) calls for a consistent template, derived from real-customer artifacts.
+
+**Why deferred:** locking a template before observing real-customer outputs risks over-fitting to dogfood shapes.
+
+**Resolution path:** after first 5–10 real customer scans (or 30 days of public use, whichever comes first), audit narrative outputs and derive a template. Update gap_prompt.md / documentation_prompt.md / remediation_prompt.md per the template.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+**Cross-references:** `docs/specs/SPEC-57.md` §SPEC-57.4.
+
+---
+
+### Evidence.content typed boundary
+
+**Item:** every detector emits `content: dict[str, Any]` with a per-detector schema documented only in prose under `evidence.yaml`. A detector that adds, removes, or renames a content key silently drifts downstream consumers (Gap Agent, FRMR generator, POA&M generator, ci_pr_summary).
+
+**Resolution path:** each detector module exports a Pydantic content model alongside `detect()`. The `@detector` decorator validates emitted Evidence's content against it. `evidence.yaml` becomes generated documentation, not curated.
+
+**Why deferred:** ~1 day of work spread across 30 detectors.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+**Cross-references:** Round-2 review finding 3 (DECISIONS 2026-04-25 "Round-2 independent review + 3PAO").
+
+---
+
+### O(1) `evidence_id` → `record_id` index
+
+**Item:** `_validate_claim_derived_from` and the new `resolve_to_record` helper both do an O(N) blob scan when an id doesn't resolve as a `record_id`. At customer scale this could be slow.
+
+**Resolution path:** maintain a SQLite `evidence_id_index(evidence_id, record_id)` table populated alongside writes. Lookup becomes O(1).
+
+**Why deferred:** not measured at scale; current bottleneck is unproven.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0 or when real-customer scan times become a concern.
+
+**Cross-references:** Round-2 review finding 4, `src/efterlev/provenance/store.py`.
+
+---
+
+### CR26 baseline_spec_version migration
+
+**Item:** when CR26 lands (mid-2026, est.) FRMR will likely change shape. Efterlev needs to detect, version-gate, and possibly re-attest under the new spec.
+
+**Resolution path:** dedicated SPEC for CR26 migration written when CR26 publishes. The `attestation_format_version` field already exists for downstream consumers to gate by.
+
+**Owner:** Maintainer.
+
+**Target:** within 60 days of CR26 publication.
+
+**Cross-references:** DECISIONS entries for FRMR, SPEC-57.3.
+
+---
+
+### Real PR creation (Drift Agent / `--apply`)
+
+**Item:** Efterlev produces remediation diffs as local output but doesn't apply them or push PRs against remote repos. v0 explicitly out-of-scope (THREAT_MODEL.md).
+
+**Resolution path:** opt-in `--apply` flag on `efterlev agent remediate`; opens a PR against the user's repo with the remediation diff. Threat-model implications need fresh review (writing to remote repos is a new trust boundary).
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0–v0.3.0, depending on customer pull.
+
+---
+
+### CI regression detection on PRs
+
+**Item:** the existing `pr-compliance-scan.yml` runs Efterlev against the PR's terraform changes. Doesn't yet diff evidence-vs-base-branch — so a PR that introduces a new finding looks the same as a PR that doesn't.
+
+**Resolution path:** scan PR + base, diff the evidence sets, comment only on net-new findings.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+**Cross-references:** CLAUDE.md "What's next" list.
+
+---
+
+### Context-aware high-entropy redaction patterns
+
+**Item:** `scrubber.py` catches structural secrets (AWS access keys, GitHub tokens, etc. — 7 families). Doesn't catch generic API secrets without known prefixes (`password\s*=\s*"<base64>"` shapes).
+
+**Resolution path:** second-pass detector that flags high-entropy strings adjacent to secret-ish keys. Per LIMITATIONS.md, primary defense remains upstream secret-scanning (trufflehog, gitleaks).
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+---
+
+### POA&M ↔ Remediation Agent integration
+
+**Item:** `efterlev poam` emits POA&M markdown with placeholder `Remediation Plan` fields. `efterlev agent remediate` produces remediation diffs. The two don't talk — POA&M's Remediation Plan field could be auto-populated from prior remediation runs.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0.
+
+---
+
+### mkdocs-material blog plugin
+
+**Item:** the launch blog post ("Why we built Efterlev") publishes to dev.to + Medium + a pinned GitHub Discussion at v0.1.0. mkdocs-material's blog plugin is a v0.2.0 follow-up so the docs site itself can carry the blog.
+
+**Why deferred:** locking a blog at v0.1.0 risks over-fitting; dev.to / Medium are the better-trafficked first venues.
+
+**Owner:** Maintainer.
+
+**Target:** v0.2.0 or when the blog has a few posts to seed it with.
+
+**Cross-references:** `docs/launch/runbook.md` Day-1 step.
+
+---
+
+## Done (resolved)
+
+*Move items here when resolved, with the resolution PR / commit and the date.*
+
+(empty)
