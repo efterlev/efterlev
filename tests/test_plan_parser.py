@@ -77,7 +77,7 @@ _STORAGE_PLAN = {
                         {
                             "address": (
                                 "module.storage."
-                                'aws_s3_bucket_server_side_encryption_configuration.'
+                                "aws_s3_bucket_server_side_encryption_configuration."
                                 'this["alpha"]'
                             ),
                             "mode": "managed",
@@ -101,9 +101,7 @@ _STORAGE_PLAN = {
     },
     "configuration": {
         "provider_config": {},
-        "root_module": {
-            "module_calls": {"storage": {"source": "./modules/storage"}}
-        },
+        "root_module": {"module_calls": {"storage": {"source": "./modules/storage"}}},
     },
 }
 

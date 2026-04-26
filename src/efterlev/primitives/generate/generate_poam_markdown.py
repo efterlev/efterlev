@@ -131,9 +131,7 @@ def generate_poam_markdown(
     reported in `skipped_unknown_ksi` — never fabricated into a POA&M
     row. Same posture as `generate_frmr_attestation`.
     """
-    open_items = [
-        c for c in input.classifications if c.status in _STATUS_IN_SCOPE
-    ]
+    open_items = [c for c in input.classifications if c.status in _STATUS_IN_SCOPE]
 
     skipped: list[str] = []
     rendered_items: list[str] = []
@@ -222,9 +220,7 @@ def _render_document(
     return "\n".join(lines)
 
 
-def _render_item(
-    clf: PoamClassificationInput, indicator: Indicator, idx: int
-) -> str:
+def _render_item(clf: PoamClassificationInput, indicator: Indicator, idx: int) -> str:
     """Render one POA&M item as a self-contained markdown block."""
     poam_id = _item_id(clf, idx)
     severity = _SEVERITY_FOR_STATUS.get(clf.status, "TBD")

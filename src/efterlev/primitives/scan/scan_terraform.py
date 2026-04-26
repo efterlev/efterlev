@@ -138,7 +138,6 @@ def scan_terraform(input: ScanTerraformInput) -> ScanTerraformOutput:
         evidence_record_ids=evidence_record_ids,
         per_detector=per_detector,
         parse_failures=[
-            ParseFailureRecord(file=f.file, reason=f.reason)
-            for f in parse_result.parse_failures
+            ParseFailureRecord(file=f.file, reason=f.reason) for f in parse_result.parse_failures
         ],
     )

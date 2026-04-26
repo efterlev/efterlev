@@ -156,13 +156,9 @@ def test_tree_walk_collects_failures_and_continues(tmp_path: Path) -> None:
     tool unusable on any real codebase, since python-hcl2 lags upstream
     Terraform syntax. Collect-and-continue is the launch-blocker fix.
     """
-    (tmp_path / "good.tf").write_text(
-        'resource "aws_s3_bucket" "ok" { bucket = "ok" }\n'
-    )
+    (tmp_path / "good.tf").write_text('resource "aws_s3_bucket" "ok" { bucket = "ok" }\n')
     (tmp_path / "bad.tf").write_text("this is not { valid terraform")
-    (tmp_path / "also_good.tf").write_text(
-        'resource "aws_s3_bucket" "ok2" { bucket = "ok2" }\n'
-    )
+    (tmp_path / "also_good.tf").write_text('resource "aws_s3_bucket" "ok2" { bucket = "ok2" }\n')
 
     result = parse_terraform_tree(tmp_path)
 

@@ -217,8 +217,7 @@ class ProvenanceStore:
         # user-controlled SQL fragments. IDs pass through parameterized
         # binding. Safe despite the f-string.
         query_by_record = (
-            f"SELECT record_id FROM provenance_records "
-            f"WHERE record_id IN ({placeholders})"
+            f"SELECT record_id FROM provenance_records WHERE record_id IN ({placeholders})"
         )
         rows = self._conn.execute(query_by_record, derived_from).fetchall()
         found: set[str] = {row[0] for row in rows}
@@ -371,8 +370,7 @@ class ProvenanceStore:
         from re-querying per record.
         """
         rows = self._conn.execute(
-            "SELECT record_id, content_ref FROM provenance_records "
-            "ORDER BY timestamp, record_id"
+            "SELECT record_id, content_ref FROM provenance_records ORDER BY timestamp, record_id"
         ).fetchall()
         return [(r[0], r[1]) for r in rows]
 

@@ -125,9 +125,7 @@ def test_claim_with_unresolvable_id_rejected(tmp_path: Path) -> None:
     direct store-write cannot persist a claim with a fabricated
     citation."""
     fake_id = "sha256:" + "0" * 64
-    with ProvenanceStore(tmp_path) as store, pytest.raises(
-        ProvenanceError, match="do not resolve"
-    ):
+    with ProvenanceStore(tmp_path) as store, pytest.raises(ProvenanceError, match="do not resolve"):
         store.write_record(
             payload={"status": "partial"},
             record_type="claim",
@@ -181,9 +179,7 @@ def test_multiple_missing_ids_reported_in_count(tmp_path: Path) -> None:
     fake_a = "sha256:" + "1" * 64
     fake_b = "sha256:" + "2" * 64
     fake_c = "sha256:" + "3" * 64
-    with ProvenanceStore(tmp_path) as store, pytest.raises(
-        ProvenanceError, match="3 evidence id"
-    ):
+    with ProvenanceStore(tmp_path) as store, pytest.raises(ProvenanceError, match="3 evidence id"):
         store.write_record(
             payload={"status": "partial"},
             record_type="claim",

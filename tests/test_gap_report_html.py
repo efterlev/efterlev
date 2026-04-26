@@ -47,9 +47,7 @@ def test_implemented_classification_with_no_evidence_ids_is_rejected() -> None:
 
 def test_partial_classification_with_no_evidence_ids_is_rejected() -> None:
     with pytest.raises(ValidationError, match="requires at least one evidence_id"):
-        KsiClassification(
-            ksi_id="KSI-IAM-MFA", status="partial", rationale="ok", evidence_ids=[]
-        )
+        KsiClassification(ksi_id="KSI-IAM-MFA", status="partial", rationale="ok", evidence_ids=[])
 
 
 def test_not_implemented_classification_may_have_no_evidence_ids() -> None:
@@ -160,15 +158,21 @@ def test_status_pill_classes_reflect_classification_status() -> None:
     placeholder = "sha256:" + "0" * 64
     classifications = [
         KsiClassification(
-            ksi_id="KSI-SVC-SNT", status="implemented", rationale="ok",
+            ksi_id="KSI-SVC-SNT",
+            status="implemented",
+            rationale="ok",
             evidence_ids=[placeholder],
         ),
         KsiClassification(
-            ksi_id="KSI-IAM-MFA", status="partial", rationale="ok",
+            ksi_id="KSI-IAM-MFA",
+            status="partial",
+            rationale="ok",
             evidence_ids=[placeholder],
         ),
         KsiClassification(
-            ksi_id="KSI-MLA-LET", status="not_implemented", rationale="ok",
+            ksi_id="KSI-MLA-LET",
+            status="not_implemented",
+            rationale="ok",
             evidence_ids=[],
         ),
     ]

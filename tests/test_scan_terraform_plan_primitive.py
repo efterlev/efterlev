@@ -105,9 +105,7 @@ def test_runs_terraform_detectors_against_plan_resources(tmp_path: Path) -> None
     # SSE resource emits a "present" separate_resource record. Plaintext
     # bucket emits "absent" with no SSE backup — the govnotes-pattern
     # motivation for this whole feature.
-    s3_evidence = [
-        ev for ev in result.evidence if ev.detector_id == "aws.encryption_s3_at_rest"
-    ]
+    s3_evidence = [ev for ev in result.evidence if ev.detector_id == "aws.encryption_s3_at_rest"]
     states = {
         (ev.content.get("resource_name"), ev.content.get("encryption_state")) for ev in s3_evidence
     }
@@ -137,9 +135,7 @@ def test_target_root_relativizes_source_refs(tmp_path: Path) -> None:
     (workspace / "modules" / "storage").mkdir(parents=True)
     plan = _write_plan(workspace, _STORAGE_PLAN)
 
-    result = scan_terraform_plan(
-        ScanTerraformPlanInput(plan_file=plan, target_root=workspace)
-    )
+    result = scan_terraform_plan(ScanTerraformPlanInput(plan_file=plan, target_root=workspace))
     # Every source_ref should be repo-relative (not absolute) per the
     # post-fixup-D contract. The translator may leave absolute paths on
     # candidates outside the repo root, but resources here resolve to

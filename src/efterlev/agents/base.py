@@ -186,9 +186,7 @@ def format_source_files_for_prompt(
     effective_ledger = redaction_ledger or get_active_redaction_ledger()
     blocks: list[str] = []
     for path, content in source_files.items():
-        scrubbed_content, events = scrub_llm_prompt(
-            content, context_hint=f"source_file[{path}]"
-        )
+        scrubbed_content, events = scrub_llm_prompt(content, context_hint=f"source_file[{path}]")
         if effective_ledger is not None and events:
             effective_ledger.extend(events)
         blocks.append(

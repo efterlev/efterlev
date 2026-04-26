@@ -25,7 +25,7 @@ from efterlev.llm.scrubber import (
 
 
 def test_aws_access_key_id_iam_akia_redacted() -> None:
-    text = 'the key is AKIAIOSFODNN7EXAMPLE and should go away'
+    text = "the key is AKIAIOSFODNN7EXAMPLE and should go away"
     scrubbed, events = scrub_llm_prompt(text, context_hint="test")
     assert "AKIAIOSFODNN7EXAMPLE" not in scrubbed
     assert "[REDACTED:aws_access_key_id:sha256:" in scrubbed

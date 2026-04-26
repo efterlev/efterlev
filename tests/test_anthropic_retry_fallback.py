@@ -147,9 +147,7 @@ def _bad_request_error() -> Exception:
 
 def test_first_attempt_success_returns_response_no_retries() -> None:
     client, msgs, slept = _make_client(script=[_ok_response()])
-    resp = client.complete(
-        system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-    )
+    resp = client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert resp.text == '{"ok": true}'
     assert len(msgs.calls) == 1
     assert slept == []  # no backoff sleeps
@@ -159,12 +157,8 @@ def test_first_attempt_success_returns_response_no_retries() -> None:
 
 
 def test_rate_limit_then_success_retries_and_returns() -> None:
-    client, msgs, slept = _make_client(
-        script=[_rate_limit_error(), _ok_response()]
-    )
-    resp = client.complete(
-        system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-    )
+    client, msgs, slept = _make_client(script=[_rate_limit_error(), _ok_response()])
+    resp = client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert resp.text == '{"ok": true}'
     assert len(msgs.calls) == 2
     assert len(slept) == 1  # one backoff between attempts
@@ -189,9 +183,7 @@ def test_all_retries_exhausted_no_fallback_raises() -> None:
         script=[_rate_limit_error(), _rate_limit_error(), _rate_limit_error()]
     )
     with pytest.raises(AgentError, match="anthropic completion failed"):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 3
     # Two backoffs: between attempts 1→2 and 2→3. No sleep after the final
     # attempt (nothing left to wait for).
@@ -206,9 +198,7 @@ def test_auth_error_no_retry_immediate_raise() -> None:
         script=[_auth_error()]  # only one item — proves no retries attempted
     )
     with pytest.raises(AgentError, match="anthropic completion failed"):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 1
     assert slept == []
 
@@ -216,9 +206,7 @@ def test_auth_error_no_retry_immediate_raise() -> None:
 def test_bad_request_no_retry() -> None:
     client, msgs, _ = _make_client(script=[_bad_request_error()])
     with pytest.raises(AgentError):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 1
 
 
@@ -236,9 +224,7 @@ def test_primary_exhausted_fallback_succeeds() -> None:
         ],
         fallback_model="claude-sonnet-4-6",
     )
-    resp = client.complete(
-        system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-    )
+    resp = client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert resp.text == '{"from": "sonnet"}'
     assert resp.model == "claude-sonnet-4-6"  # provenance reflects served model
     assert len(msgs.calls) == 4
@@ -259,9 +245,7 @@ def test_primary_exhausted_fallback_also_fails_raises_original() -> None:
         fallback_model="claude-sonnet-4-6",
     )
     with pytest.raises(AgentError, match="anthropic completion failed"):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 4
 
 
@@ -274,9 +258,7 @@ def test_fallback_skipped_when_primary_equals_fallback() -> None:
         fallback_model="claude-opus-4-7",  # same as request
     )
     with pytest.raises(AgentError):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 3  # no extra fallback call
 
 
@@ -288,9 +270,7 @@ def test_no_retry_on_auth_even_if_fallback_configured() -> None:
         fallback_model="claude-sonnet-4-6",
     )
     with pytest.raises(AgentError):
-        client.complete(
-            system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7"
-        )
+        client.complete(system="s", messages=[LLMMessage(content="m")], model="claude-opus-4-7")
     assert len(msgs.calls) == 1
     assert slept == []
 

@@ -117,9 +117,7 @@ def runtime_detector_count() -> int:
 
 def runtime_indicator_count() -> int:
     """How many KSIs the FRMR catalog declares structurally."""
-    catalog = json.loads(
-        (REPO_ROOT / "catalogs" / "frmr" / "FRMR.documentation.json").read_text()
-    )
+    catalog = json.loads((REPO_ROOT / "catalogs" / "frmr" / "FRMR.documentation.json").read_text())
     return sum(len(theme.get("indicators", {})) for theme in catalog.get("KSI", {}).values())
 
 
@@ -186,8 +184,7 @@ def check_doc(path: Path, expected: dict[str, int], cli_commands: set[str]) -> l
         if claimed != expected["tests"]:
             line_no = text[: m.start()].count("\n") + 1
             findings.append(
-                f"{rel}:{line_no}: claims '{claimed} passing' but actual is "
-                f"{expected['tests']}"
+                f"{rel}:{line_no}: claims '{claimed} passing' but actual is {expected['tests']}"
             )
     for m in DETECTOR_COUNT_RE.finditer(text):
         claimed = int(m.group(1))

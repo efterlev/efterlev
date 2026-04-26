@@ -97,9 +97,7 @@ def test_scan_collects_parse_failures_and_continues(tmp_path: Path) -> None:
     abort-on-first behavior made the tool unusable on any real codebase).
     """
     (tmp_path / "bad.tf").write_text("not valid { terraform")
-    (tmp_path / "good.tf").write_text(
-        'resource "aws_s3_bucket" "ok" { bucket = "ok" }\n'
-    )
+    (tmp_path / "good.tf").write_text('resource "aws_s3_bucket" "ok" { bucket = "ok" }\n')
     with ProvenanceStore(tmp_path) as store, active_store(store):
         result = scan_terraform(ScanTerraformInput(target_dir=tmp_path))
 

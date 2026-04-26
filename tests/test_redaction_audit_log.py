@@ -1,12 +1,12 @@
 """Tests for the redaction audit-log infrastructure:
 
-  - `write_redaction_log` creates/appends .efterlev/redacted.log with
-    0600 perms and JSONL records.
-  - `active_redaction_ledger` context manager + `get_active_redaction_ledger`
-    thread a ledger through without modifying agent signatures.
-  - `format_evidence_for_prompt` picks up the active ledger when no
-    explicit kwarg is passed.
-  - The `efterlev redaction review` CLI reads the log and summarizes.
+- `write_redaction_log` creates/appends .efterlev/redacted.log with
+  0600 perms and JSONL records.
+- `active_redaction_ledger` context manager + `get_active_redaction_ledger`
+  thread a ledger through without modifying agent signatures.
+- `format_evidence_for_prompt` picks up the active ledger when no
+  explicit kwarg is passed.
+- The `efterlev redaction review` CLI reads the log and summarizes.
 """
 
 from __future__ import annotations
@@ -84,9 +84,7 @@ def test_write_redaction_log_appends_existing(tmp_path: Path) -> None:
     write_redaction_log(_make_ledger_with_event("github_token"), log, scan_id="s2")
 
     lines = [
-        json.loads(line)
-        for line in log.read_text(encoding="utf-8").splitlines()
-        if line.strip()
+        json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
     assert len(lines) == 2
     assert lines[0]["scan_id"] == "s1"
@@ -306,9 +304,7 @@ def test_redaction_review_limit_respected(tmp_path: Path) -> None:
     ]
     _seed_log(tmp_path, records)
 
-    result = runner.invoke(
-        app, ["redaction", "review", "--target", str(tmp_path), "--limit", "3"]
-    )
+    result = runner.invoke(app, ["redaction", "review", "--target", str(tmp_path), "--limit", "3"])
     assert result.exit_code == 0
     # Most-recent 3 shown: s7, s8, s9. Earlier not shown → explicitly named.
     assert "s9" in result.output

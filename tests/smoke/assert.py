@@ -47,9 +47,7 @@ def main() -> int:
     if db_path.is_file():
         try:
             conn = sqlite3.connect(db_path)
-            cur = conn.execute(
-                "SELECT COUNT(*) FROM records WHERE record_type = 'evidence'"
-            )
+            cur = conn.execute("SELECT COUNT(*) FROM records WHERE record_type = 'evidence'")
             (evidence_count,) = cur.fetchone()
             if evidence_count == 0:
                 failures.append("no evidence records in store")

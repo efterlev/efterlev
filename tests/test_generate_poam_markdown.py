@@ -245,9 +245,7 @@ def test_evidence_ids_rendered_as_short_prefixes_in_summary() -> None:
 
 def test_many_evidence_ids_truncate_summary_with_full_list_below() -> None:
     ev_ids = tuple(f"sha256:{i:064x}" for i in range(10))
-    result = generate_poam_markdown(
-        _input([_clf("KSI-A", status="partial", evidence_ids=ev_ids)])
-    )
+    result = generate_poam_markdown(_input([_clf("KSI-A", status="partial", evidence_ids=ev_ids)]))
     md = result.markdown
     # Summary truncates to 5 with a "+5 more" hint.
     assert "+5 more" in md

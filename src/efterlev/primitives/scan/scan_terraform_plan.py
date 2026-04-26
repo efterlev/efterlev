@@ -65,9 +65,7 @@ def scan_terraform_plan(input: ScanTerraformPlanInput) -> ScanTerraformOutput:
     resources = parse_plan_json(input.plan_file, target_root=input.target_root)
 
     applicable_sources: set[Source] = {"terraform", "terraform-plan"}
-    detectors = [
-        spec for spec in get_registry().values() if spec.source in applicable_sources
-    ]
+    detectors = [spec for spec in get_registry().values() if spec.source in applicable_sources]
 
     store = get_active_store()
     pre_ids: set[str] = set(store.iter_records()) if store is not None else set()
@@ -87,9 +85,7 @@ def scan_terraform_plan(input: ScanTerraformPlanInput) -> ScanTerraformOutput:
 
     evidence_record_ids: list[str] = []
     if store is not None:
-        evidence_record_ids = [
-            rid for rid in store.iter_records() if rid not in pre_ids
-        ]
+        evidence_record_ids = [rid for rid in store.iter_records() if rid not in pre_ids]
 
     return ScanTerraformOutput(
         resources_parsed=len(resources),

@@ -141,9 +141,7 @@ def _load_records(efterlev_dir: Path) -> list[dict[str, Any]]:
     """
     db_path = efterlev_dir / "store.db"
     if not db_path.is_file():
-        raise FileNotFoundError(
-            f"no provenance DB at {db_path}; did `efterlev scan` run?"
-        )
+        raise FileNotFoundError(f"no provenance DB at {db_path}; did `efterlev scan` run?")
     import sqlite3
 
     conn = sqlite3.connect(db_path)

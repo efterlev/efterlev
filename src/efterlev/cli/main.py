@@ -339,8 +339,7 @@ def scan(
             typer.echo(f"    … and {scan_result.files_failed - 10} more")
         typer.echo("    For codebases with persistent failures, try plan-JSON mode:")
         typer.echo(
-            "      terraform plan -out plan.bin && "
-            "terraform show -json plan.bin > plan.json"
+            "      terraform plan -out plan.bin && terraform show -json plan.bin > plan.json"
         )
         typer.echo("      efterlev scan --plan plan.json")
 
@@ -349,9 +348,7 @@ def scan(
     # zero failures = empty repo (legitimate; not a failure).
     if scan_result.parse_failures and scan_result.resources_parsed == 0:
         typer.echo("", err=True)
-        typer.echo(
-            "error: every .tf file failed to parse; nothing to scan.", err=True
-        )
+        typer.echo("error: every .tf file failed to parse; nothing to scan.", err=True)
         raise typer.Exit(code=1)
     if scan_result.evidence_record_ids:
         typer.echo("")
@@ -1029,8 +1026,7 @@ def provenance_verify(
             typer.echo(f)
         typer.echo("")
         typer.echo(
-            "  Each mismatch indicates either tampering, disk corruption, or a"
-            " partial write."
+            "  Each mismatch indicates either tampering, disk corruption, or a partial write."
         )
         raise typer.Exit(code=1)
     typer.echo("RESULT: clean. Every blob matches its content-addressed hash.")

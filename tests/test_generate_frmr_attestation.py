@@ -295,10 +295,12 @@ def test_controls_can_overlap_at_family_level_not_just_exact_match() -> None:
     assert "AC-2" in rec.controls_evidenced
     assert "AC-2.5" in rec.controls_mapped
     assert "AC-2" not in rec.controls_mapped  # the granularity gap is real
+
     # Family-level overlap holds: every evidenced control has at least
     # one mapped control in the same family.
     def _family(c: str) -> str:
         return c.split(".", 1)[0]
+
     mapped_families = {_family(c) for c in rec.controls_mapped}
     evidenced_families = {_family(c) for c in rec.controls_evidenced}
     assert evidenced_families.issubset(mapped_families)
