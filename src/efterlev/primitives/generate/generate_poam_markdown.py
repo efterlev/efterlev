@@ -122,7 +122,10 @@ def generate_poam_markdown(
 
     Deterministic: same inputs → byte-identical output. No LLM call.
     Every item in the rendered POA&M is a `partial` or `not_implemented`
-    KSI; `implemented` / `not_applicable` classifications are skipped.
+    KSI; `implemented`, `not_applicable`, and `evidence_layer_inapplicable`
+    classifications are skipped (the latter is SPEC-57.1's distinct
+    "scanner has no path to evidence this KSI by design" status — it's a
+    coverage statement, not a remediation item).
 
     Unknown-KSI classifications (KSI id not in `indicators`) are
     reported in `skipped_unknown_ksi` — never fabricated into a POA&M

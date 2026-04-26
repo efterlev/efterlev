@@ -85,15 +85,21 @@ def test_open_items_only_generate_rows() -> None:
                 _clf("KSI-B", status="not_applicable"),
                 _clf("KSI-C", status="partial"),
                 _clf("KSI-D", status="not_implemented"),
+                # SPEC-57.1: the new status is a coverage statement, not a
+                # remediation item — must be excluded from POA&M output
+                # the same way `not_applicable` is.
+                _clf("KSI-E", status="evidence_layer_inapplicable"),
             ]
         )
     )
     assert result.item_count == 2
-    # implemented / N/A absent from the markdown (except maybe the header).
+    # implemented / N/A / evidence_layer_inapplicable absent from items.
     md = result.markdown
     assert "KSI-A" not in md or "implemented" not in md.split("KSI-A")[1].split("KSI-")[0]
     assert "KSI-C" in md
     assert "KSI-D" in md
+    # KSI-E (evidence_layer_inapplicable) gets no POA&M row.
+    assert "KSI-E" not in md or "evidence_layer_inapplicable" not in md
 
 
 def test_no_open_items_produces_clean_empty_marker() -> None:

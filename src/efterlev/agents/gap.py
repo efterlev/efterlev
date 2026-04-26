@@ -38,7 +38,20 @@ from efterlev.llm import LLMClient
 from efterlev.models import Claim, Evidence, Indicator
 from efterlev.provenance.context import get_active_store
 
-GapStatus = Literal["implemented", "partial", "not_implemented", "not_applicable"]
+GapStatus = Literal[
+    "implemented",
+    "partial",
+    "not_implemented",
+    "not_applicable",
+    # SPEC-57.1 (2026-04-25, 3PAO review §3): distinguishes "the scanner has
+    # no path to evidence this KSI by design" (procedural-only, e.g.,
+    # KSI-AFR-FSI / FedRAMP Security Inbox) from "not_implemented" (the CSP
+    # genuinely doesn't implement this KSI). Critical for review credibility:
+    # without this distinction, an infrastructure-only scan against any
+    # baseline shows ~80% red because most KSIs are procedural — a coverage
+    # statement masquerading as a compliance finding.
+    "evidence_layer_inapplicable",
+]
 
 
 class GapAgentInput(BaseModel):
@@ -62,10 +75,11 @@ class KsiClassification(BaseModel):
     positive claim; reject it at the model layer so the agent's persistence
     path never sees it.
 
-    `not_implemented` and `not_applicable` are exempt — those are honest
-    declarations that the evidence is *missing* / *out of scope*, and the
-    rationale is the cited record. Requiring evidence citations on those
-    would force the model to fabricate them.
+    `not_implemented`, `not_applicable`, and `evidence_layer_inapplicable`
+    are exempt — those are honest declarations that the evidence is
+    *missing* / *out of scope* / *unreachable from this input modality*,
+    and the rationale is the cited record. Requiring evidence citations on
+    those would force the model to fabricate them.
     """
 
     model_config = ConfigDict(frozen=True)

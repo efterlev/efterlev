@@ -47,6 +47,19 @@ class AttestationArtifactInfo(BaseModel):
 
     tool: ArtifactTool = "efterlev"
     tool_version: str
+    # SPEC-57.3 (2026-04-25, 3PAO review §7): the artifact format version
+    # is distinct from `frmr_version` so downstream consumers can version-
+    # gate against the artifact shape independently of the upstream catalog
+    # version. CR26 (mid-2026, est.) will likely bump FRMR; this field
+    # stays at "1" unless Efterlev makes a breaking change to the artifact
+    # shape itself. Bump policy:
+    #   - new optional fields → no bump
+    #   - new required fields → bump
+    #   - renamed/removed fields → bump
+    #   - semantic changes to existing field interpretations → bump
+    # Pre-SPEC-57 artifacts implicitly have format version "0" — consumers
+    # must default to "0" when this field is absent.
+    attestation_format_version: str = "1"
     baseline: str
     frmr_version: str
     frmr_last_updated: str
@@ -61,11 +74,23 @@ class AttestationArtifactInfo(BaseModel):
 class AttestationArtifactIndicator(BaseModel):
     """Per-indicator attestation record inside the artifact.
 
-    Fields parallel `AttestationDraft` plus `controls` (the 800-53 control
-    list resolved from FRMR) and `claim_record_id` (if the agent persisted
-    a provenance record for this draft). Readers diffing the artifact
-    against the FRMR catalog can align by indicator id; readers walking
-    provenance can follow `claim_record_id` back to the narrative Claim.
+    Fields parallel `AttestationDraft` plus the controls split (`controls_mapped`
+    + `controls_evidenced` per SPEC-57.2) and `claim_record_id` (if the agent
+    persisted a provenance record for this draft). Readers diffing the
+    artifact against the FRMR catalog can align by indicator id; readers
+    walking provenance can follow `claim_record_id` back to the narrative
+    Claim.
+
+    Why two control lists (SPEC-57.2, 2026-04-25, 3PAO review §5):
+    `controls_mapped` is the FRMR catalog's list for the KSI — what the
+    catalog says this KSI covers regardless of what the scanner saw.
+    `controls_evidenced` is the union of `Evidence.controls_evidenced`
+    across the cited evidence — what the scan actually proved. The latter
+    is always a subset of the former. A 3PAO reviewing the artifact reads
+    `controls_evidenced` for "what was demonstrated" and `controls_mapped`
+    for "what would be demonstrated by full coverage of this KSI." Merging
+    the two (the v0 behavior, dropped here) overstated evidenced coverage
+    by listing every FRMR-mapped control as if the scan touched it.
     """
 
     model_config = ConfigDict(frozen=True, extra="forbid")
@@ -74,7 +99,8 @@ class AttestationArtifactIndicator(BaseModel):
     status: AttestationStatus | None = None
     narrative: str | None = None
     citations: list[AttestationCitation] = Field(default_factory=list)
-    controls: list[str] = Field(default_factory=list)
+    controls_mapped: list[str] = Field(default_factory=list)
+    controls_evidenced: list[str] = Field(default_factory=list)
     claim_record_id: str | None = None
 
 

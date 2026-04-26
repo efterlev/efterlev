@@ -161,6 +161,10 @@ class DocumentationAgent(Agent):
                 frmr_version=input.frmr_version,
                 mode="agent_drafted",
                 citations=skeleton_result.draft.citations,
+                # SPEC-57.2: skeleton already computed the union of
+                # `Evidence.controls_evidenced` from the cited evidence;
+                # carry it through to the artifact serializer.
+                controls_evidenced=list(skeleton_result.draft.controls_evidenced),
                 status=clf.status if clf.status != "not_applicable" else None,
                 narrative=narrative_output.narrative,
             )

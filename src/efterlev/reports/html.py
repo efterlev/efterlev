@@ -98,6 +98,10 @@ h3 { font-size: 15px; margin-top: 0; }
 .status-partial        { background: #fff2c2; color: #6a4e00; }
 .status-not_implemented { background: #fddede; color: #7a1f1f; }
 .status-not_applicable { background: #eaeef2; color: #444c56; }
+/* SPEC-57.1: distinct from not_implemented — blue rather than red,
+   so a reviewer scanning the report can immediately see which "not
+   covered" rows are real gaps vs scanner-coverage gaps. */
+.status-evidence_layer_inapplicable { background: #d6e5fa; color: #0a3a7a; }
 
 .ksi-id, .record-id, .fence-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

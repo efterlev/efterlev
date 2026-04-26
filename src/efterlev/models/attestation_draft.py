@@ -27,7 +27,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 AttestationMode = Literal["scanner_only", "agent_drafted"]
-AttestationStatus = Literal["implemented", "partial", "not_implemented", "not_applicable"]
+AttestationStatus = Literal[
+    "implemented",
+    "partial",
+    "not_implemented",
+    "not_applicable",
+    # Parallels the GapStatus literal — see src/efterlev/agents/gap.py.
+    # SPEC-57.1: "scanner has no path to evidence this KSI by design,"
+    # distinct from not_implemented ("CSP doesn't implement"). Reviewer
+    # action still required; the status communicates that the tool's
+    # silence is structural, not a finding.
+    "evidence_layer_inapplicable",
+]
 
 
 class AttestationCitation(BaseModel):
@@ -57,6 +68,14 @@ class AttestationDraft(BaseModel):
     frmr_version: str
     mode: AttestationMode
     citations: list[AttestationCitation] = Field(default_factory=list)
+    # SPEC-57.2 (2026-04-25, 3PAO review §5): the union of
+    # `Evidence.controls_evidenced` across the cited evidence records.
+    # Always a subset of the FRMR-mapped controls list; surfaces "what was
+    # demonstrated" distinct from "what would be demonstrated by full
+    # coverage of this KSI" (the FRMR mapping). The artifact serializer
+    # combines this with `Indicator.controls` to populate the
+    # `controls_mapped` + `controls_evidenced` pair on the artifact.
+    controls_evidenced: list[str] = Field(default_factory=list)
     # scanner_only: both None. agent_drafted: both populated.
     status: AttestationStatus | None = None
     narrative: str | None = None

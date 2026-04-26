@@ -82,6 +82,10 @@ The v1 scope lock (2026-04-22) moved OSCAL SSP / AR / POA&M generators from v1 t
 
 LLM-drafted SSP narratives are grounded in the evidence records Efterlev has collected. If the evidence is thin, the narrative will be thin. The Documentation Agent does not invent implementation details to fill gaps; it describes what is evidenced and flags what is not.
 
+### Narrative templates are not enforced (SPEC-57.4 follow-up)
+
+The Documentation Agent's per-KSI narratives vary in length and structure across status classes — some tight, some longer with multi-paragraph reviewer-action lists. The 3PAO review of 2026-04-25 noted this as an observation (not a blocker) for downstream review tooling that wants to do automated content checks. v0.2 work after launch will derive a consistent narrative template from real-customer artifacts; locking one now risks over-fitting to the dogfooded codebase shape. See `docs/specs/SPEC-57.md` §SPEC-57.4 for the deferral rationale.
+
 ### Confidence levels are heuristic
 
 Claims carry confidence levels (`low` / `medium` / `high`). These are heuristic, not statistically calibrated. They reflect model signal on narrative specificity and evidence density, not a measured probability of correctness.

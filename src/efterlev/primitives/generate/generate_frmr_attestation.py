@@ -119,12 +119,28 @@ def generate_frmr_attestation(
             continue
 
         theme_key = indicator.theme
+        # SPEC-57.2 (2026-04-25): split former `controls` field into the
+        # FRMR-mapped list (`controls_mapped`, from the catalog — what
+        # this KSI covers in principle) and the evidenced list
+        # (`controls_evidenced`, from the cited evidence — what the scan
+        # actually demonstrated). Always: controls_evidenced ⊆ controls_mapped.
+        #
+        # Case normalization (2026-04-25 follow-up): the FRMR catalog
+        # vendored from FedRAMP uses lowercase control IDs (`ac-2`); the
+        # detector evidence library uses uppercase (`AC-2`, matching NIST
+        # 800-53's own convention). Normalize both to uppercase here so
+        # the subset relationship holds and downstream consumers don't
+        # have to defensively case-fold. Uppercase wins because it's
+        # NIST's own canonical form.
+        controls_mapped = sorted({c.upper() for c in indicator.controls})
+        controls_evidenced = sorted({c.upper() for c in draft.controls_evidenced})
         artifact_indicator = AttestationArtifactIndicator(
             mode=draft.mode,
             status=draft.status,
             narrative=draft.narrative,
             citations=list(draft.citations),
-            controls=list(indicator.controls),
+            controls_mapped=controls_mapped,
+            controls_evidenced=controls_evidenced,
             claim_record_id=input.claim_record_ids.get(draft.ksi_id),
         )
         themes.setdefault(theme_key, {})[draft.ksi_id] = artifact_indicator

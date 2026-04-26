@@ -61,6 +61,13 @@
 ^DECISIONS\.md:.*(279|344|461|496|529|552|575|602) (test|passing)
 ^docs/specs/.*\.md:.*(279|344|461|496|529|552|575|602) (test|passing)
 
+# scripts/check-docs.py and the workflow that runs it both name stale
+# test counts as EXAMPLES of what they detect — not claims about the
+# current count. The script's whole purpose is to catch this class
+# of drift; the example numbers in its docstring are pedagogical.
+^scripts/check-docs\.py:.*(279|344|461|496|529|552|575|602) (test|passing)
+^\.github/workflows/check-docs\.yml:.*(279|344|461|496|529|552|575|602) (test|passing)
+
 # "Confidentiality" appears legitimately in CIA-triad and FRMR
 # definitions (SC-28 mapping precedent, transmission-confidentiality
 # KSI, FRMR security-event definitions). The internal_only_markers

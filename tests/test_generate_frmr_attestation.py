@@ -44,6 +44,7 @@ def _draft(
     status: str | None = "implemented",
     narrative: str | None = "A narrative.",
     citations: list[AttestationCitation] | None = None,
+    controls_evidenced: list[str] | None = None,
 ) -> AttestationDraft:
     return AttestationDraft(
         ksi_id=ksi_id,
@@ -51,6 +52,7 @@ def _draft(
         frmr_version="0.9.43-beta",
         mode=mode,  # type: ignore[arg-type]
         citations=citations or [],
+        controls_evidenced=controls_evidenced or [],
         status=status,  # type: ignore[arg-type]
         narrative=narrative,
     )
@@ -95,7 +97,14 @@ def test_single_draft_lands_under_its_theme() -> None:
     assert "KSI-AFR-FSI" in indicators
     assert indicators["KSI-AFR-FSI"].status == "implemented"
     assert indicators["KSI-AFR-FSI"].narrative == "A narrative."
-    assert indicators["KSI-AFR-FSI"].controls == ["ir-6", "ir-7"]
+    # SPEC-57.2: controls split into mapped (from FRMR catalog) and
+    # evidenced (from cited evidence). Both are normalized to uppercase
+    # at the artifact boundary (NIST 800-53 canonical form) so the
+    # subset relationship holds regardless of the upstream FRMR
+    # catalog's lowercase convention or the detector library's
+    # uppercase convention.
+    assert indicators["KSI-AFR-FSI"].controls_mapped == ["IR-6", "IR-7"]
+    assert indicators["KSI-AFR-FSI"].controls_evidenced == []
 
 
 def test_multiple_drafts_group_by_theme() -> None:
@@ -220,3 +229,72 @@ def test_duplicate_ksi_draft_last_wins() -> None:
     )
     assert result.artifact.KSI["AFR"].indicators["KSI-AFR-FSI"].narrative == "second narrative"
     assert result.indicator_count == 1
+
+
+# --- SPEC-57.2: controls split ---------------------------------------------
+
+
+def test_controls_evidenced_is_subset_of_controls_mapped() -> None:
+    """SPEC-57.2 (3PAO review §5): the artifact carries two control
+    lists. `controls_mapped` is the FRMR catalog's full list for the KSI
+    (what would be demonstrated by full coverage). `controls_evidenced` is
+    what the cited evidence actually demonstrated. The latter is always a
+    subset of the former.
+
+    Case normalization: this test mixes lowercase (FRMR catalog form)
+    and uppercase (detector evidence form) inputs. The artifact
+    boundary normalizes both to uppercase so the subset relationship
+    holds regardless of upstream case conventions. Without normalization
+    the bug shipped to a real artifact (caught in the live SPEC-57
+    dogfood; this test locks the fix).
+    """
+    indicator = _indicator(
+        "KSI-IAM-ELP",
+        theme="IAM",
+        # Lowercase, matching the vendored FRMR catalog.
+        controls=["ac-2", "ac-3", "ac-6", "ia-2", "ps-2", "ps-3", "sc-4"],
+    )
+    # Uppercase, matching detector evidence convention.
+    draft = _draft("KSI-IAM-ELP", controls_evidenced=["AC-2", "AC-3", "AC-6"])
+    result = generate_frmr_attestation(
+        _input(drafts=[draft], indicators={indicator.id: indicator}),
+    )
+    rec = result.artifact.KSI["IAM"].indicators["KSI-IAM-ELP"]
+    assert rec.controls_mapped == ["AC-2", "AC-3", "AC-6", "IA-2", "PS-2", "PS-3", "SC-4"]
+    assert rec.controls_evidenced == ["AC-2", "AC-3", "AC-6"]
+    # The contract: evidenced ⊆ mapped (now holds across mixed-case input).
+    assert set(rec.controls_evidenced).issubset(set(rec.controls_mapped))
+
+
+def test_controls_evidenced_empty_when_no_evidence_cited() -> None:
+    """A draft with no citations and no controls_evidenced renders the
+    field as an empty list (always present, never omitted — stable schema
+    is what consumers prefer).
+    """
+    # Lowercase input (FRMR catalog form); normalized to uppercase at the
+    # artifact boundary per SPEC-57.2.
+    indicator = _indicator("KSI-AFR-FSI", "AFR", ["ir-6", "ir-7"])
+    draft = _draft("KSI-AFR-FSI", citations=[], controls_evidenced=[])
+    result = generate_frmr_attestation(
+        _input(drafts=[draft], indicators={indicator.id: indicator}),
+    )
+    rec = result.artifact.KSI["AFR"].indicators["KSI-AFR-FSI"]
+    # Uppercase per SPEC-57.2 case-normalization at the artifact boundary.
+    assert rec.controls_mapped == ["IR-6", "IR-7"]
+    assert rec.controls_evidenced == []
+
+
+# --- SPEC-57.3: attestation_format_version ---------------------------------
+
+
+def test_attestation_format_version_present_and_distinct_from_frmr_version() -> None:
+    """SPEC-57.3 (3PAO review §7): the artifact's format version is
+    distinct from `frmr_version` so downstream consumers can version-gate
+    against the artifact shape independently of the upstream catalog.
+    First bump (this commit) sets it to "1".
+    """
+    result = generate_frmr_attestation(_input())
+    assert result.artifact.info.attestation_format_version == "1"
+    assert result.artifact.info.frmr_version == "0.9.43-beta"
+    # The two are independent — bumping FRMR doesn't bump the format.
+    assert result.artifact.info.attestation_format_version != result.artifact.info.frmr_version

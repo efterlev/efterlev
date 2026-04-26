@@ -55,6 +55,10 @@ def generate_frmr_skeleton(
     the skeleton was built against without re-reading the store.
     """
     citations: list[AttestationCitation] = []
+    # SPEC-57.2: union of controls actually evidenced by the cited evidence
+    # records. Sorted for deterministic serialization (the primitive is
+    # marked deterministic=True; canonical-bytes JSON requires stable order).
+    controls_evidenced_set: set[str] = set()
     for ev in input.evidence:
         citations.append(
             AttestationCitation(
@@ -64,6 +68,7 @@ def generate_frmr_skeleton(
                 source_lines=_format_line_range(ev.source_ref.line_start, ev.source_ref.line_end),
             )
         )
+        controls_evidenced_set.update(ev.controls_evidenced)
 
     draft = AttestationDraft(
         ksi_id=input.ksi_id,
@@ -71,6 +76,7 @@ def generate_frmr_skeleton(
         frmr_version=input.frmr_version,
         mode="scanner_only",
         citations=citations,
+        controls_evidenced=sorted(controls_evidenced_set),
         status=None,
         narrative=None,
     )

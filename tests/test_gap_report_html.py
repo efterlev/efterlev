@@ -70,6 +70,39 @@ def test_not_applicable_classification_may_have_no_evidence_ids() -> None:
     assert clf.evidence_ids == []
 
 
+def test_evidence_layer_inapplicable_classification_may_have_no_evidence_ids() -> None:
+    """SPEC-57.1: the new status is exempt from the citation requirement,
+    same as not_implemented / not_applicable. The status itself is the
+    declaration that the scanner has no path to evidence this KSI.
+    """
+    clf = KsiClassification(
+        ksi_id="KSI-AFR-FSI",
+        status="evidence_layer_inapplicable",
+        rationale="FedRAMP Security Inbox is a procedural commitment with no IaC surface.",
+        evidence_ids=[],
+    )
+    assert clf.status == "evidence_layer_inapplicable"
+    assert clf.evidence_ids == []
+
+
+def test_evidence_layer_inapplicable_renders_with_dedicated_status_pill() -> None:
+    """SPEC-57.1: the new status gets its own CSS class so a reviewer can
+    distinguish "scanner-coverage gap" from "real not_implemented finding"
+    at a glance.
+    """
+    clf = KsiClassification(
+        ksi_id="KSI-AFR-FSI",
+        status="evidence_layer_inapplicable",
+        rationale="ok",
+        evidence_ids=[],
+    )
+    html = render_gap_report_html(_report(classifications=[clf]), **_baseline_kwargs())
+    # The classification's status-pill CSS class names the new status.
+    assert 'class="status-pill status-evidence_layer_inapplicable"' in html
+    # The CSS rule for the new pill exists in the embedded stylesheet.
+    assert ".status-evidence_layer_inapplicable" in html
+
+
 # --- HTML rendering ------------------------------------------------------------
 
 

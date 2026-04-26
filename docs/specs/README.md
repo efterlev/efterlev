@@ -180,6 +180,12 @@ The 5 sub-deliverables in SPEC-56:
 | 56.4 | Announcement copy | landed (`docs/launch/announcement-copy.md`) |
 | 56.5 | Design-partner outreach templates | landed (`docs/launch/design-partner-outreach.md`) |
 
+## Post-A8 / pre-flip remediation
+
+Specs that landed after A8 closed, in response to dogfood findings or independent review.
+
+- [SPEC-57](SPEC-57.md) — Attestation artifact v1: 3PAO review remediation omnibus. Fifth GapStatus (`evidence_layer_inapplicable`), `controls_mapped` + `controls_evidenced` split, `attestation_format_version` field, deferral of narrative-template consistency to v0.2. — M — implemented (2026-04-25); SPEC-57.4 deferred to v0.2 with documented rationale.
+
 ---
 
 ## Post-launch (Phase C) — not yet indexed
