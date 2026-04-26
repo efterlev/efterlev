@@ -47,18 +47,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
       - name: Run pip-audit
-        # `--skip-editable` skips scanning the local editable install of
-        # efterlev itself (uv sync installs it that way for development).
-        # `--strict` was here originally but it converts pip-audit warnings
-        # into errors — including a "distribution marked as editable"
-        # warning that fires regardless of --skip-editable. The default
-        # behavior already exits 1 on any vulnerability finding, which
-        # is the actual gate we want; --strict adds noise that fails CI
-        # on a non-finding. Removed 2026-04-26 after first CI run on
-        # efterlev/efterlev surfaced the conflict.
+        # Scope: we audit OUR pinned dependency set, not the whole
+        # virtualenv. Without scoping, pip-audit also scans pip itself
+        # (which ships with the Python install) and any other
+        # tool-chain packages that aren't part of our supply-chain
+        # surface. CI hit CVE-2026-3219 in pip 26.0.1 (no fix version)
+        # this way — a real vuln, but not in a dependency we control
+        # or ship to users. Using `uv export` gives us exactly the
+        # set users would install.
+        #
+        # `--strict` was removed 2026-04-26 after it converted the
+        # "distribution marked as editable" warning into an error.
         run: |
-          uv run --with pip-audit pip-audit \
-            --skip-editable
+          uv export --format requirements-txt --no-emit-project > /tmp/efterlev-deps.txt
+          uv run --with pip-audit pip-audit -r /tmp/efterlev-deps.txt
 
   bandit:
     name: bandit (Python static security analysis)
