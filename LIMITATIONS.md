@@ -82,6 +82,10 @@ The v1 scope lock (2026-04-22) moved OSCAL SSP / AR / POA&M generators from v1 t
 
 LLM-drafted SSP narratives are grounded in the evidence records Efterlev has collected. If the evidence is thin, the narrative will be thin. The Documentation Agent does not invent implementation details to fill gaps; it describes what is evidenced and flags what is not.
 
+### Cross-platform install validation is non-blocking at v0.1.0
+
+`release-smoke.yml` runs a 7-cell matrix that validates `pipx install efterlev` and `docker pull ghcr.io/efterlev/efterlev` actually works on Linux x86, Linux arm64, macOS Intel, macOS arm64, and Windows. At v0.1.0 the matrix is configured non-blocking (`continue-on-error: true` on the matrix job) because the v0.0.1-rc.[1–4] dry-runs (2026-04-26) showed it fighting GitHub-CI infrastructure quirks (uv cache propagation, TestPyPI CDN edge staleness, setup-uv's cache-restoration behavior) more than reporting product bugs — verified by identical local `uv tool install` succeeding first try. The build, sign, and publish paths are validated; cross-platform install validation runs and reports findings, but doesn't block the release. Tracked as a v0.1.x follow-up in `docs/launch/post-launch-followups.md`.
+
 ### Narrative templates are not enforced (SPEC-57.4 follow-up)
 
 The Documentation Agent's per-KSI narratives vary in length and structure across status classes — some tight, some longer with multi-paragraph reviewer-action lists. The 3PAO review of 2026-04-25 noted this as an observation (not a blocker) for downstream review tooling that wants to do automated content checks. v0.2 work after launch will derive a consistent narrative template from real-customer artifacts; locking one now risks over-fitting to the dogfooded codebase shape. See `docs/specs/SPEC-57.md` §SPEC-57.4 for the deferral rationale.
