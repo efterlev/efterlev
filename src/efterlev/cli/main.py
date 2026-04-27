@@ -247,7 +247,9 @@ def scan(
     See DECISIONS 2026-04-22 "Design: Terraform Plan JSON support" for
     the trust-posture call.
     """
-    from efterlev.errors import DetectorError, ManifestError
+    from efterlev.boundary import active_boundary_config
+    from efterlev.config import load_config
+    from efterlev.errors import ConfigError, DetectorError, ManifestError
     from efterlev.frmr.loader import FrmrDocument
     from efterlev.primitives.evidence import (
         LoadEvidenceManifestsInput,
@@ -296,8 +298,22 @@ def scan(
 
     manifest_dir = root / ".efterlev" / "manifests"
 
+    # Priority 4 (2026-04-27): activate the workspace's `[boundary]` config so
+    # detectors emit Evidence with the correct `boundary_state`. Empty boundary
+    # is the default ("boundary_undeclared") — the user hasn't told us their
+    # FedRAMP scope, so every Evidence flows through unfiltered.
     try:
-        with ProvenanceStore(root) as store, active_store(store):
+        workspace_config = load_config(root / ".efterlev" / "config.toml")
+    except ConfigError as e:
+        typer.echo(f"error: {e}", err=True)
+        raise typer.Exit(code=1) from e
+
+    try:
+        with (
+            ProvenanceStore(root) as store,
+            active_store(store),
+            active_boundary_config(workspace_config.boundary),
+        ):
             if plan_path is not None:
                 scan_result = scan_terraform_plan(
                     ScanTerraformPlanInput(plan_file=plan_path, target_root=root)

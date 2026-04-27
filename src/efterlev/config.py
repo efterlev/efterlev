@@ -112,6 +112,32 @@ class BaselineConfig(BaseModel):
     id: str = DEFAULT_BASELINE
 
 
+class BoundaryConfig(BaseModel):
+    """Authorization-boundary scoping declaration (Priority 4 of v1-readiness-plan).
+
+    A FedRAMP customer typically has GovCloud Terraform in scope and commercial
+    Terraform out of scope. This config declares which paths are inside the
+    boundary so the scanner can mark Evidence accordingly. Without an explicit
+    declaration (both lists empty), every Evidence is `boundary_undeclared` —
+    findings still flow but the customer hasn't told us their scope.
+
+    Patterns are gitignore-style (gitwildmatch). The same syntax customers
+    expect from `.gitignore`: `boundary/**` matches anything under `boundary/`,
+    `**/main.tf` matches all `main.tf` files anywhere, etc.
+
+    Decision precedence: `exclude` wins. A path matching both an `include`
+    pattern and an `exclude` pattern is `out_of_boundary`. An empty `include`
+    with non-empty `exclude` means "everything except these"; an empty
+    `exclude` with non-empty `include` means "only these"; both empty means
+    `boundary_undeclared`.
+    """
+
+    model_config = ConfigDict(frozen=True, extra="forbid")
+
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+
+
 class Config(BaseModel):
     """Top-level `.efterlev/config.toml` schema."""
 
@@ -120,6 +146,7 @@ class Config(BaseModel):
     llm: LLMConfig = Field(default_factory=LLMConfig)
     scan: ScanConfig = Field(default_factory=ScanConfig)
     baseline: BaselineConfig = Field(default_factory=BaselineConfig)
+    boundary: BoundaryConfig = Field(default_factory=BoundaryConfig)
 
 
 def load_config(path: Path) -> Config:
@@ -171,4 +198,29 @@ def save_config(config: Config, path: Path) -> None:
         f'id = "{config.baseline.id}"',
         "",
     ]
+    # Emit `[boundary]` only when the customer has declared something. Empty
+    # boundary is the default ("boundary_undeclared"); writing the header with
+    # empty arrays would suggest a meaningful empty declaration when there
+    # isn't one, and tomllib loads a missing section as the default
+    # (BoundaryConfig() with empty lists) anyway.
+    if config.boundary.include or config.boundary.exclude:
+        boundary_lines = ["[boundary]"]
+        if config.boundary.include:
+            boundary_lines.append(_format_string_list("include", config.boundary.include))
+        if config.boundary.exclude:
+            boundary_lines.append(_format_string_list("exclude", config.boundary.exclude))
+        boundary_lines.append("")
+        lines.extend(boundary_lines)
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _format_string_list(field_name: str, values: list[str]) -> str:
+    """Format a TOML list-of-strings on one line. e.g. include = ["a", "b"].
+
+    Used for BoundaryConfig.include / exclude. Multi-line array would be
+    valid TOML too but one-line is more grep-able for short lists, which
+    is the expected scale for boundary declarations (a handful of
+    patterns per project).
+    """
+    quoted = ", ".join(f'"{v}"' for v in values)
+    return f"{field_name} = [{quoted}]"
