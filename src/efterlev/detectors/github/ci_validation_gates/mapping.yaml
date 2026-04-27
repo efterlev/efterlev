@@ -1,0 +1,25 @@
+detector_id: github.ci_validation_gates
+
+# KSI-CMT-VTD ("Validating Throughout Deployment") is evidenced by the
+# presence of automated validation steps in CI workflows. FRMR 0.9.43-beta
+# lists CM-3, CM-3(2), CM-4(2), and SI-2 in this KSI's controls; this
+# detector evidences CM-3 / CM-3(2) directly. CM-4(2) and SI-2 are
+# adjacent and tracked for follow-up detectors (e.g. detecting whether
+# validation findings actually gate the merge — that's branch-protection
+# territory, separate detector).
+ksis:
+  - KSI-CMT-VTD
+
+controls:
+  - id: CM-3
+    enhancements: [CM-3(2)]
+    evidence_type: repo-metadata
+    coverage: partial
+    notes: >
+      Evidences Configuration Change Control by surfacing whether CI
+      workflows run any IaC-validation tooling (terraform validate,
+      tflint, tfsec, checkov, trivy config). Coverage is partial: the
+      detector confirms a tool runs in CI but does NOT verify that its
+      findings actually fail the build, nor that the workflow is wired
+      into branch-protection required-checks. Both gaps are tracked
+      for follow-up repo-metadata detectors.

@@ -31,7 +31,20 @@ from efterlev.provenance.context import get_active_store
 
 log = logging.getLogger(__name__)
 
-Source = Literal["terraform", "terraform-plan", "cloudformation", "cdk", "k8s", "pulumi"]
+Source = Literal[
+    "terraform",
+    "terraform-plan",
+    "cloudformation",
+    "cdk",
+    "k8s",
+    "pulumi",
+    # Repo-metadata sources (Priority 1.2, 2026-04-27): reading what the
+    # codebase declares about itself in non-IaC files. The first such source
+    # is `github-workflows` — `.github/workflows/*.yml` files — which evidence
+    # CI/CD posture KSIs (CMT-VTD: Validating Throughout Deployment, CMT-RMV:
+    # Redeploying vs Modifying, etc.) that have no analog in IaC alone.
+    "github-workflows",
+]
 
 D_in = TypeVar("D_in")
 
