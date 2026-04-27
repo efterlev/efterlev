@@ -8,6 +8,11 @@ registration via `efterlev.detectors`.
 from __future__ import annotations
 
 from efterlev.models import ScanSummary
+from efterlev.primitives.scan.scan_github_workflows import (
+    ScanGithubWorkflowsInput,
+    ScanGithubWorkflowsOutput,
+    scan_github_workflows,
+)
 from efterlev.primitives.scan.scan_terraform import (
     ScanTerraformInput,
     ScanTerraformOutput,
@@ -67,11 +72,14 @@ def latest_scan_summary(store: ProvenanceStore) -> ScanSummary | None:
 
 
 __all__ = [
+    "ScanGithubWorkflowsInput",
+    "ScanGithubWorkflowsOutput",
     "ScanSummary",
     "ScanTerraformInput",
     "ScanTerraformOutput",
     "ScanTerraformPlanInput",
     "latest_scan_summary",
+    "scan_github_workflows",
     "scan_terraform",
     "scan_terraform_plan",
 ]

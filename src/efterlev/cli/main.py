@@ -263,8 +263,10 @@ def scan(
         load_evidence_manifests,
     )
     from efterlev.primitives.scan import (
+        ScanGithubWorkflowsInput,
         ScanTerraformInput,
         ScanTerraformPlanInput,
+        scan_github_workflows,
         scan_terraform,
         scan_terraform_plan,
     )
@@ -327,6 +329,13 @@ def scan(
                 )
             else:
                 scan_result = scan_terraform(ScanTerraformInput(target_dir=root))
+            # Priority 1.2 (2026-04-27): also scan `.github/workflows/*.yml`
+            # for repo-metadata detectors (currently github.ci_validation_gates
+            # for KSI-CMT-VTD). Empty result when the target has no
+            # `.github/workflows/` directory — typical for non-GitHub-Actions
+            # repos. Both terraform and github-workflows results merge into
+            # the user-facing scan summary.
+            workflow_result = scan_github_workflows(ScanGithubWorkflowsInput(target_dir=root))
             manifest_result = load_evidence_manifests(
                 LoadEvidenceManifestsInput(
                     manifest_dir=manifest_dir,
@@ -338,7 +347,9 @@ def scan(
         typer.echo(f"error: {e}", err=True)
         raise typer.Exit(code=1) from e
 
-    total_evidence = scan_result.evidence_count + manifest_result.evidence_count
+    total_evidence = (
+        scan_result.evidence_count + workflow_result.evidence_count + manifest_result.evidence_count
+    )
     scan_mode = f"plan {plan_path}" if plan_path is not None else str(root)
     typer.echo(f"Scanned {scan_mode}")
     typer.echo(f"  resources parsed:    {scan_result.resources_parsed}")
@@ -346,13 +357,21 @@ def scan(
         # Surfaced alongside resources so the imbalance (5 resources / 11
         # module calls) is visible at the top of the summary, not buried.
         typer.echo(f"  module calls:        {scan_result.module_calls}")
-    typer.echo(f"  detectors run:       {scan_result.detectors_run}")
+    if workflow_result.workflows_parsed > 0:
+        typer.echo(f"  workflows parsed:    {workflow_result.workflows_parsed}")
+    typer.echo(
+        f"  detectors run:       {scan_result.detectors_run + workflow_result.detectors_run}"
+    )
     typer.echo(f"  manifest files:      {manifest_result.files_found}")
     typer.echo(f"  manifests loaded:    {manifest_result.manifests_loaded}")
     typer.echo(f"  evidence records:    {total_evidence}")
-    typer.echo(f"    from detectors:    {scan_result.evidence_count}")
+    typer.echo(
+        f"    from detectors:    {scan_result.evidence_count + workflow_result.evidence_count}"
+    )
     typer.echo(f"    from manifests:    {manifest_result.evidence_count}")
     for det in scan_result.per_detector:
+        typer.echo(f"    {det.detector_id}@{det.version:<7}  +{det.evidence_count}")
+    for det in workflow_result.per_detector:
         typer.echo(f"    {det.detector_id}@{det.version:<7}  +{det.evidence_count}")
     for m in manifest_result.per_manifest:
         rel = m.file.relative_to(root) if m.file.is_absolute() else m.file

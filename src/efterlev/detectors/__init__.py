@@ -48,3 +48,9 @@ from efterlev.detectors.aws import (
     vpc_flow_logs_enabled,  # noqa: F401
     vpc_logical_segmentation,  # noqa: F401
 )
+
+# GitHub-source detectors (Priority 1.2, 2026-04-27): repo-metadata
+# detectors that read `.github/workflows/*.yml` rather than IaC.
+from efterlev.detectors.github import (
+    ci_validation_gates,  # noqa: F401
+)

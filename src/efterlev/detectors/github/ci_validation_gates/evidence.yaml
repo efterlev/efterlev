@@ -1,0 +1,54 @@
+detector_id: github.ci_validation_gates
+
+# Evidence content shape this detector emits. One Evidence per workflow
+# file in `.github/workflows/` (each parsed `WorkflowFile`).
+content_fields:
+  resource_type:
+    type: string
+    values: ["github_workflow"]
+    notes: Always "github_workflow"; carried for symmetry with sibling detectors.
+
+  resource_name:
+    type: string
+    notes: Workflow `name:` field if set; otherwise the filename stem.
+
+  triggers:
+    type: list[string]
+    notes: >
+      Sorted list of workflow `on:` event names (`push`, `pull_request`,
+      `schedule`, etc.). Empty when the workflow has no parseable trigger.
+
+  validation_tools_detected:
+    type: list[string]
+    notes: >
+      Substrings matched against step `run:` commands and `uses:` action
+      references. Drawn from a small allow-list of canonical IaC validation
+      tools: `terraform validate`, `terraform plan`, `tflint`, `tfsec`,
+      `checkov`, `trivy config`. Empty when no tool is found.
+
+  validation_state:
+    type: enum
+    values: ["present", "absent"]
+    notes: |
+      `present` — at least one validation tool detected. Evidences
+      CM-3 + CM-3(2).
+
+      `absent` — workflow runs but no validation tooling detected.
+      Evidences CM-3 alone (the workflow is a deploy pipeline, not a
+      validation gate). Gap field populated.
+
+  runs_on_pull_request:
+    type: bool
+    notes: >
+      True when `on:` includes `pull_request` or `pull_request_target`.
+      Workflows that validate on PR are stronger evidence than ones that
+      only run on push, but the v0 detector does not distinguish in
+      `validation_state` — that nuance is for the Gap Agent or a future
+      enhancement.
+
+  gap:
+    type: string | absent
+    notes: |
+      Present on `validation_state="absent"` Evidence. Names the canonical
+      tools the detector looked for and the implication for KSI-CMT-VTD
+      coverage.
