@@ -1544,6 +1544,54 @@ Both follow-ups demonstrate the value of dogfooding implementations against real
 
 ---
 
+## 2026-04-27 — Strategic reset: raise v1 bar from "interesting" to "outstanding"; defer launch tag `[scope]` `[positioning]` `[process]` `[launch]`
+
+**Decision:** Rescind the calendar-driven v0.1.0 launch posture. The prior plan was: close maintainer-action queue (security review §8 sign-off, fresh-eyes pause, optional GovCloud walkthrough), tag `v0.1.0`, flip the repo public, post launch announcement. That plan is paused. The new posture: do not cut the launch tag until six concrete priorities (documented in `docs/v1-readiness-plan.md`) clear acceptance. There is no calendar deadline. There is a quality bar.
+
+The maintainer's framing: "I don't want the first release to be 'interesting and potentially helpful'. I want it to be outstanding. The core must be strong and comprehensive."
+
+The six priorities, summarized:
+
+1. **Detector breadth to ≥30 KSIs across ≥8 themes** (today: 14 KSIs, 5 themes). Requires 18 new detectors including the un-attempted CMT/SCR/PIY repo-meta categories.
+2. **HTML report overhaul** — coverage heatmap, search/sort/filter, drill-down, diff view, machine-readable JSON sidecar, print stylesheet, all in a self-contained vanilla-JS file.
+3. **One-command UX** — `efterlev report` runs the full pipeline; per-stage progress; `efterlev doctor` self-diagnosis; `--watch` mode; friendly errors at API/credential boundaries.
+4. **Authorization-boundary scoping** — `boundary_state` field on Evidence/Claim; HTML and POA&M respect declared scope.
+5. **One real-customer dogfood + one 3PAO touchpoint** — calendar-time work, but the only validation that converts "interesting" to "outstanding" for someone who is not the maintainer.
+6. **Honesty pass on the 8 `ksis=[]` detectors** — rehome where FRMR mapping exists; rename the marketing where it doesn't ("30 detectors → N KSI-mapped + M supplementary 800-53 evidence").
+
+**Rationale:**
+
+- **What was working under the old plan.** The architecture was sound (Evidence-vs-Claim type discipline, content-addressed provenance, scrubber, retry/fallback, fence/citation validators, Bedrock backend, MCP server, end-to-end release pipeline validated via 5 rc-tag dry-runs). The codebase was test-clean (628 passing, mypy/ruff/format/check-docs/grep-scrub all clean). The security review was structurally complete and current to main. The launch could have happened today and the artifact would have been honest.
+
+- **What was not working under the old plan.** "Honest" is not the same as "outstanding." 14 of 60 KSIs covered with 27% of detectors carrying `ksis=[]` and contributing nothing to the KSI roll-up is not a strong core. The HTML output is functional but not remarkable — no coverage matrix, no search, no drill-down, no JSON sidecar. The UX requires 5 commands and produces zero progress signal during a 7-minute documentation run. No external party has used Efterlev end-to-end. No 3PAO has read the attestation artifact. Shipping into that posture risks burning the one chance at a launch first impression.
+
+- **Why now.** No external pressure forces a near-term launch. The maintainer is funding the project personally. Pre-launch private-repo posture costs nothing to extend. The marginal value of additional pre-launch polish (detector breadth, HTML quality, UX, real-world validation) is large; the marginal cost is calendar time, which the maintainer is willing to spend.
+
+- **Why this is captured here and not just in the planning doc.** The planning doc enumerates the work. This decision entry captures the *strategic shift in posture* — the launch was effectively gate-ready and we explicitly chose not to cut it. That decision is the kind of thing that needs a paper trail for future-self and future-contributors who otherwise see "everything was ready, why did they wait?"
+
+**Alternatives considered:**
+
+- **Cut v0.1.0 now, layer the six priorities into v0.1.x / v0.2 patches.** Rejected because v0.1.0 IS the first impression. Once a launch announcement goes out, the perception of the tool is set by what was visible at announcement-time, not by what landed in v0.1.3. Iterating publicly is appropriate post-first-impression; it is the wrong shape for the first impression itself.
+- **Cut v0.1.0 now with explicit "early-access / preview" framing.** Rejected because "early access" implies a roadmap people can buy into now and watch evolve. The maintainer's intent is the opposite: ship the strong version, then iterate from there. An "early-access" framing would put pressure on the project to demonstrate post-launch velocity that competes with attention on the priority work.
+- **Cut v0.1.0 with a scope reduction (e.g., only AWS-Terraform, only 5 themes, explicitly-narrow).** Rejected because the scope reduction is already what the current state IS. Marketing it as "narrow but deep" requires the depth to be remarkable, which is exactly priority 1 + 2 + 3 of the new plan.
+- **Hold the launch but defer priority 5 (real-customer dogfood + 3PAO) as a post-launch followup.** Rejected because this is the only priority that validates the artifact for someone who is not the maintainer. Without it, every other priority is engineering work on an unvalidated tool.
+
+**What this changes operationally:**
+
+- The maintainer-action queue documented in CLAUDE.md and elsewhere (security review §8 sign-off, fresh-eyes pause, repo public-flip, `git tag v0.1.0`) is paused. Not cancelled — paused. Each item gets done after the priorities clear, in order, per the validation gate at the bottom of `docs/v1-readiness-plan.md`.
+- The security review (`docs/security-review-2026-04.md`) stays current at SHA `2b3bdd2` — the work landing under this plan will trigger a fresh review pass at the new SHA before sign-off.
+- `docs/launch/post-launch-followups.md` continues tracking items NOT in the v1 plan (still genuine v0.1.x / v0.2.0 followups that would have made v0.1.0 if launch had cut today).
+- README's "Status" stanza needs updating to reflect the deferred-launch posture without misrepresenting it as cancelled.
+- LIMITATIONS.md needs no immediate update; every line that says "we don't do X yet" is still accurate. It gets refreshed when priorities clear.
+
+**Cross-references:**
+- Plan: `docs/v1-readiness-plan.md` (this commit).
+- Pre-shift launch posture: DECISIONS 2026-04-23 "Rescind closed-source lock; open-source-first, gate-driven launch."
+- Pre-shift security review: `docs/security-review-2026-04.md` at SHA `2b3bdd2`.
+- Validation gate (the new launch precondition): `docs/v1-readiness-plan.md` §"Validation gate (the launch tag is downstream of this)".
+
+---
+
 
 
 ```
