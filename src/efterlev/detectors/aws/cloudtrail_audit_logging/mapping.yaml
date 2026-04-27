@@ -14,6 +14,17 @@ ksis:
       events are being generated; it does not evidence that those events
       flow to a SIEM or that alerting is configured — those live in the
       SIEM's own configuration, outside Terraform.
+  - id: KSI-CMT-LMC
+    coverage: partial
+    notes: >
+      Cross-mapped 2026-04-27 (Priority 1.8). KSI-CMT-LMC ("Log and monitor
+      modifications to the cloud service offering") asks for change logging
+      at the cloud service layer; CloudTrail logs every API call (including
+      every CRUD operation against AWS resources), which IS the modification
+      log. AU-2 is in KSI-CMT-LMC's `controls` array per FRMR 0.9.43-beta —
+      clean cross-map, not invented. Does NOT evidence downstream review
+      processes (CM-3.2 / CM-4.2) or change-management procedure
+      effectiveness (procedural concerns).
 
 controls:
   - id: AU-2

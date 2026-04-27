@@ -25,7 +25,10 @@ def test_multi_region_trail_emits_present_evidence() -> None:
     results = _run(DETECTOR_DIR / "fixtures" / "should_match" / "multi_region_trail.tf")
     assert len(results) == 1
     ev = results[0]
-    assert set(ev.ksis_evidenced) == {"KSI-MLA-LET", "KSI-MLA-OSM"}
+    # KSI-CMT-LMC added 2026-04-27 (Priority 1.8 cross-map): CloudTrail's
+    # AU-2 is in KSI-CMT-LMC's controls array, so the detector legitimately
+    # also evidences "Log and monitor modifications to the cloud service offering."
+    assert set(ev.ksis_evidenced) == {"KSI-MLA-LET", "KSI-MLA-OSM", "KSI-CMT-LMC"}
     assert set(ev.controls_evidenced) == {"AU-2", "AU-12"}
     assert ev.content["cloudtrail_state"] == "present"
     assert ev.content["is_multi_region"] is True
@@ -53,6 +56,6 @@ def test_detector_registered_with_expected_metadata() -> None:
     from efterlev.detectors.base import get_registry
 
     spec = get_registry()["aws.cloudtrail_audit_logging"]
-    assert set(spec.ksis) == {"KSI-MLA-LET", "KSI-MLA-OSM"}
+    assert set(spec.ksis) == {"KSI-MLA-LET", "KSI-MLA-OSM", "KSI-CMT-LMC"}
     assert set(spec.controls) == {"AU-2", "AU-12"}
     assert spec.source == "terraform"
