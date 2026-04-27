@@ -32,7 +32,7 @@ from efterlev.models import Evidence, TerraformResource
 
 @detector(
     id="aws.cloudtrail_audit_logging",
-    ksis=["KSI-MLA-LET", "KSI-MLA-OSM"],
+    ksis=["KSI-MLA-LET", "KSI-MLA-OSM", "KSI-CMT-LMC"],
     controls=["AU-2", "AU-12"],
     source="terraform",
     version="0.1.0",
@@ -42,6 +42,11 @@ def detect(resources: list[TerraformResource]) -> list[Evidence]:
 
     Evidences (KSI):     KSI-MLA-LET (Logging Event Types),
                          KSI-MLA-OSM (Operating SIEM Capability) — partial.
+                         KSI-CMT-LMC (Logging Changes — added 2026-04-27 cross-
+                         map): CloudTrail logs every API call against the AWS
+                         account, which IS the modification log KSI-CMT-LMC
+                         asks for. AU-2 is in KSI-CMT-LMC's `controls` array
+                         in FRMR 0.9.43-beta — clean cross-map, not invented.
     Evidences (800-53):  AU-2 (Event Logging), AU-12 (Audit Record Generation).
     Does NOT prove:      (1) downstream SIEM ingestion or alerting;
                          (2) log-retention policies against S3 lifecycle;
@@ -94,7 +99,7 @@ def _emit_trail_evidence(r: TerraformResource, now: datetime) -> Evidence:
 
     return Evidence.create(
         detector_id="aws.cloudtrail_audit_logging",
-        ksis_evidenced=["KSI-MLA-LET", "KSI-MLA-OSM"],
+        ksis_evidenced=["KSI-MLA-LET", "KSI-MLA-OSM", "KSI-CMT-LMC"],
         controls_evidenced=["AU-2", "AU-12"],
         source_ref=r.source_ref,
         content=content,
