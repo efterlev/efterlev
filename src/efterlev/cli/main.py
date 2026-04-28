@@ -904,6 +904,8 @@ def agent_document(
                     frmr_version=frmr_doc.version,
                     frmr_last_updated=frmr_doc.last_updated,
                     claim_record_ids=claim_record_ids,
+                    machine_validation_cadence=config.cadence.machine_validation_cadence,
+                    non_machine_validation_cadence=config.cadence.non_machine_validation_cadence,
                 )
             )
     except AgentError as e:
