@@ -20,6 +20,12 @@ KSI mapping per FRMR 0.9.43-beta:
     The `http_tokens = "required"` knob evidences CM-2 directly
     (it IS the baseline-configuration choice). AC-17(3) and PL-10
     don't fit this resource, so we don't claim them.
+  - KSI-CNA-DFP (Defining Functionality and Privileges) lists `cm-2`
+    and `si-3`. Cross-mapped 2026-04-27 (Priority 1.16) via CM-2:
+    IMDSv2-required strictly defines what the EC2 metadata service
+    will respond to (it requires session tokens — the canonical
+    anti-Capital-One scope restriction). SI-3 (Malicious Code
+    Protection) doesn't fit this resource.
 """
 
 from __future__ import annotations
@@ -36,7 +42,7 @@ _INSTANCE_TYPES = {"aws_instance", "aws_launch_template"}
 
 @detector(
     id="aws.ec2_imdsv2_required",
-    ksis=["KSI-CNA-IBP"],
+    ksis=["KSI-CNA-IBP", "KSI-CNA-DFP"],
     controls=["CM-2"],
     source="terraform",
     version="0.1.0",
@@ -46,7 +52,12 @@ def detect(resources: list[TerraformResource]) -> list[Evidence]:
 
     Evidences (800-53):  CM-2 (Baseline Configuration). IMDSv2-required
                          IS the AWS-documented EC2 baseline.
-    Evidences (KSI):     KSI-CNA-IBP (Implementing Best Practices).
+    Evidences (KSI):     KSI-CNA-IBP (Implementing Best Practices),
+                         KSI-CNA-DFP (Defining Functionality and
+                         Privileges) — cross-mapped via CM-2; IMDSv2
+                         strictly defines what the metadata service
+                         will respond to (the canonical anti-Capital-
+                         One scope restriction).
     Does NOT prove:      that all EC2 instances in the boundary are
                          covered by these Terraform resources (a stray
                          console-launched instance won't be flagged);
@@ -106,7 +117,7 @@ def _emit_imdsv2_evidence(r: TerraformResource, now: datetime) -> Evidence:
 
     return Evidence.create(
         detector_id="aws.ec2_imdsv2_required",
-        ksis_evidenced=["KSI-CNA-IBP"],
+        ksis_evidenced=["KSI-CNA-IBP", "KSI-CNA-DFP"],
         controls_evidenced=["CM-2"],
         source_ref=r.source_ref,
         content=content,

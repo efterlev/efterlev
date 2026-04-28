@@ -5,6 +5,7 @@ Inspects every `aws_instance` and `aws_launch_template` and reports whether IMDS
 ## What this detector evidences
 
 - **KSI-CNA-IBP** (Implementing Best Practices).
+- **KSI-CNA-DFP** (Defining Functionality and Privileges) — cross-mapped via CM-2, which is in KSI-CNA-DFP's FRMR `controls` array. IMDSv2-required strictly defines what the EC2 metadata service will respond to (the canonical anti-Capital-One scope restriction).
 - **800-53 controls:** CM-2 (Baseline Configuration).
 
 ## What it proves

@@ -33,7 +33,9 @@ def test_imdsv2_required_emits_imdsv2_required_state() -> None:
     by_name = {r.content["resource_name"]: r for r in results}
 
     assert by_name["app"].detector_id == "aws.ec2_imdsv2_required"
-    assert by_name["app"].ksis_evidenced == ["KSI-CNA-IBP"]
+    # KSI-CNA-DFP cross-mapped 2026-04-27 (Priority 1.16): CM-2 is in
+    # both KSI-CNA-IBP and KSI-CNA-DFP's FRMR controls arrays.
+    assert by_name["app"].ksis_evidenced == ["KSI-CNA-IBP", "KSI-CNA-DFP"]
     assert by_name["app"].controls_evidenced == ["CM-2"]
     assert by_name["app"].content["imds_state"] == "imdsv2_required"
     assert by_name["app"].content["http_tokens"] == "required"
@@ -131,6 +133,6 @@ def test_detector_registered_with_expected_metadata() -> None:
     from efterlev.detectors.base import get_registry
 
     spec = get_registry()["aws.ec2_imdsv2_required"]
-    assert spec.ksis == ("KSI-CNA-IBP",)
+    assert spec.ksis == ("KSI-CNA-IBP", "KSI-CNA-DFP")
     assert spec.controls == ("CM-2",)
     assert spec.source == "terraform"
