@@ -149,6 +149,38 @@ _FILTER_CSS_JS = """
   /* Filter and search hide independently — both apply display:none.
      Either condition hides the element. */
   .filter-hidden, .search-hidden { display: none !important; }
+  /* Per-classification drill-down: collapsed list of cited source refs.
+     Reviewers click "Show cited source refs" to see file:line ranges
+     for each cited evidence record. */
+  details.evidence-drilldown {
+    margin-top: 10px;
+    font-size: 13px;
+  }
+  details.evidence-drilldown > summary {
+    cursor: pointer;
+    color: #0a3a7a;
+    user-select: none;
+  }
+  details.evidence-drilldown > summary:hover { text-decoration: underline; }
+  ul.cited-source-refs {
+    margin: 8px 0 0 0;
+    padding-left: 20px;
+    list-style: square;
+  }
+  ul.cited-source-refs li { margin-bottom: 4px; color: #4a4a4a; }
+  .cited-detector {
+    color: #4a4a4a;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 12px;
+    margin: 0 6px;
+  }
+  code.cited-source {
+    background: #eaeef2;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 12px;
+    color: #0a2540;
+  }
 </style>
 <script>
 (function () {
@@ -497,6 +529,22 @@ _BODY_TEMPLATE = """
               >attestation</span>{% endif %}{% if not loop.last %}, {% endif %}
     {%- endfor %}
   </div>
+  {% set source_refs = source_refs_for(clf.evidence_ids) %}
+  {% if source_refs %}
+  <details class="evidence-drilldown">
+    <summary>Show cited source refs ({{ source_refs | length }})</summary>
+    <ul class="cited-source-refs">
+      {% for ref in source_refs %}
+      <li>
+        <code class="fence-id">{{ ref.evidence_id[:14] }}…</code>
+        <span class="cited-detector">{{ ref.detector_id }}</span>
+        <code class="cited-source">{{ ref.source_file
+          }}{% if ref.source_lines %}:{{ ref.source_lines }}{% endif %}</code>
+      </li>
+      {% endfor %}
+    </ul>
+  </details>
+  {% endif %}
   {% else %}
   <div class="evidence-links">No evidence cited.</div>
   {% endif %}
@@ -579,6 +627,7 @@ def render_gap_report_html(
     template = env.from_string(_BODY_TEMPLATE)
     evidence_list = evidence or []
     detector_by_id: dict[str, str] = {ev.evidence_id: ev.detector_id for ev in evidence_list}
+    evidence_by_id: dict[str, Evidence] = {ev.evidence_id: ev for ev in evidence_list}
     evidence_boundary_state: dict[str, str] = {
         ev.evidence_id: ev.boundary_state for ev in evidence_list
     }
@@ -587,6 +636,27 @@ def render_gap_report_html(
     )
     workspace_boundary_state = _resolve_workspace_boundary_state(evidence_boundary_state)
     coverage_matrix = build_coverage_matrix(report, themes, indicators)
+
+    def source_refs_for(evidence_ids: list[str]) -> list[dict[str, Any]]:
+        """For each cited evidence_id, look up the Evidence and emit a flat
+        dict with detector_id + source_file:line_range. Skip ids the
+        renderer doesn't have an Evidence record for (e.g. claim-only
+        citations from manifest scopes)."""
+        out: list[dict[str, Any]] = []
+        for eid in evidence_ids:
+            ev = evidence_by_id.get(eid)
+            if ev is None:
+                continue
+            line_range = _format_line_range(ev.source_ref.line_start, ev.source_ref.line_end)
+            out.append(
+                {
+                    "evidence_id": eid,
+                    "detector_id": ev.detector_id,
+                    "source_file": str(ev.source_ref.file),
+                    "source_lines": line_range,
+                }
+            )
+        return out
 
     body = template.render(
         classifications=report.ksi_classifications,
@@ -599,6 +669,7 @@ def render_gap_report_html(
         classification_boundary_state=classification_boundary_state,
         workspace_boundary_state=workspace_boundary_state,
         coverage_matrix=coverage_matrix,
+        source_refs_for=source_refs_for,
     )
 
     when = (generated_at or datetime.now().astimezone()).isoformat(timespec="seconds")
@@ -639,6 +710,7 @@ def render_gap_report_json(
     or 3PAO ingest tooling that wants the full theme x KSI grid.
     """
     evidence_list = evidence or []
+    evidence_by_id: dict[str, Evidence] = {ev.evidence_id: ev for ev in evidence_list}
     evidence_boundary_state: dict[str, str] = {
         ev.evidence_id: ev.boundary_state for ev in evidence_list
     }
@@ -648,6 +720,27 @@ def render_gap_report_json(
     workspace_boundary_state = _resolve_workspace_boundary_state(evidence_boundary_state)
     when = (generated_at or datetime.now().astimezone()).isoformat(timespec="seconds")
     matrix = build_coverage_matrix(report, themes, indicators)
+
+    def cited_evidence_refs(evidence_ids: list[str]) -> list[dict[str, Any]]:
+        """Same shape the HTML renderer's source_refs_for emits — but for
+        the JSON sidecar so downstream tools have direct file:line refs
+        without re-resolving."""
+        out: list[dict[str, Any]] = []
+        for eid in evidence_ids:
+            ev = evidence_by_id.get(eid)
+            if ev is None:
+                continue
+            out.append(
+                {
+                    "evidence_id": eid,
+                    "detector_id": ev.detector_id,
+                    "source_file": str(ev.source_ref.file),
+                    "source_lines": _format_line_range(
+                        ev.source_ref.line_start, ev.source_ref.line_end
+                    ),
+                }
+            )
+        return out
 
     return {
         "schema_version": GAP_REPORT_JSON_SCHEMA_VERSION,
@@ -662,6 +755,7 @@ def render_gap_report_json(
                 "status": clf.status,
                 "rationale": clf.rationale,
                 "evidence_ids": list(clf.evidence_ids),
+                "cited_evidence_refs": cited_evidence_refs(clf.evidence_ids),
                 "boundary_state": classification_boundary_state.get(
                     clf.ksi_id, "boundary_undeclared"
                 ),
@@ -679,6 +773,17 @@ def render_gap_report_json(
         "claim_record_ids": list(report.claim_record_ids),
         "coverage_matrix": matrix,
     }
+
+
+def _format_line_range(line_start: int | None, line_end: int | None) -> str | None:
+    """Render a line-range string for display: "12-24" or "12" or None."""
+    if line_start is None and line_end is None:
+        return None
+    if line_start is None or line_end is None:
+        return str(line_start or line_end)
+    if line_start == line_end:
+        return str(line_start)
+    return f"{line_start}-{line_end}"
 
 
 def build_coverage_matrix(
