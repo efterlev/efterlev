@@ -101,6 +101,28 @@ _FILTER_CSS_JS = """
     border-color: #0a2540;
     color: #ffffff;
   }
+  .sort-label {
+    font-size: 12px;
+    color: #4a4a4a;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+    margin-left: 12px;
+  }
+  .sort-select {
+    padding: 5px 8px;
+    font-size: 13px;
+    border: 1px solid #d3d8e0;
+    border-radius: 4px;
+    background: #ffffff;
+    color: #1a1a1a;
+    cursor: pointer;
+  }
+  .sort-select:focus {
+    outline: none;
+    border-color: #0a2540;
+    box-shadow: 0 0 0 2px rgba(10, 37, 64, 0.12);
+  }
   .search-input {
     flex: 1 1 240px;
     min-width: 200px;
@@ -135,6 +157,17 @@ _FILTER_CSS_JS = """
   var btns = bar.querySelectorAll('.filter-btn');
   var searchInput = bar.querySelector('#card-search');
   var searchCount = bar.querySelector('#search-count');
+  var sortSelect = bar.querySelector('#card-sort');
+  var listEl = document.querySelector('.classifications-list');
+
+  // Severity ranking — most actionable on top.
+  var SEVERITY_RANK = {
+    not_implemented: 0,
+    partial: 1,
+    implemented: 2,
+    evidence_layer_inapplicable: 3,
+    not_applicable: 4
+  };
 
   btns.forEach(function (btn) {
     btn.addEventListener('click', function () {
@@ -160,6 +193,10 @@ _FILTER_CSS_JS = """
     });
   }
 
+  if (sortSelect && listEl) {
+    sortSelect.addEventListener('change', applySort);
+  }
+
   function applySearch() {
     var q = (searchInput ? searchInput.value || '' : '').trim().toLowerCase();
     var targets = document.querySelectorAll('.record.claim, tr[data-status]');
@@ -180,6 +217,34 @@ _FILTER_CSS_JS = """
         ? ''
         : visible + ' / ' + total + ' match';
     }
+  }
+
+  function applySort() {
+    if (!listEl || !sortSelect) return;
+    var key = sortSelect.value;
+    var cards = Array.prototype.slice.call(listEl.querySelectorAll('.record.claim'));
+    cards.sort(function (a, b) {
+      if (key === 'severity') {
+        var sa = SEVERITY_RANK[a.getAttribute('data-status')];
+        var sb = SEVERITY_RANK[b.getAttribute('data-status')];
+        if (sa !== sb) return (sa || 99) - (sb || 99);
+        return ksiOf(a).localeCompare(ksiOf(b));
+      }
+      if (key === 'evidence_count') {
+        var na = parseInt(a.getAttribute('data-evidence-count') || '0', 10);
+        var nb = parseInt(b.getAttribute('data-evidence-count') || '0', 10);
+        if (na !== nb) return nb - na;  // descending
+        return ksiOf(a).localeCompare(ksiOf(b));
+      }
+      // 'ksi' default: alphabetical by ksi_id.
+      return ksiOf(a).localeCompare(ksiOf(b));
+    });
+    cards.forEach(function (c) { listEl.appendChild(c); });
+  }
+
+  function ksiOf(el) {
+    var id = el.getAttribute('id') || '';
+    return id.replace(/^ksi-/, '');
   }
 })();
 </script>
@@ -368,6 +433,12 @@ _BODY_TEMPLATE = """
   <button class="filter-btn"
           data-status="evidence_layer_inapplicable">Evidence-layer inapplicable</button>
   <button class="filter-btn" data-status="not_applicable">Not applicable</button>
+  <label class="sort-label" for="card-sort">Sort:</label>
+  <select id="card-sort" class="sort-select" aria-label="Sort classifications">
+    <option value="ksi">By KSI</option>
+    <option value="severity">By severity</option>
+    <option value="evidence_count">By evidence count</option>
+  </select>
   <input type="search"
          id="card-search"
          class="search-input"
@@ -375,13 +446,15 @@ _BODY_TEMPLATE = """
          aria-label="Search classifications" />
   <span class="search-count" id="search-count" aria-live="polite"></span>
 </div>
+<div class="classifications-list">
 {% endif %}
 {% for clf in classifications %}
 {% set bs = classification_boundary_state.get(clf.ksi_id, 'boundary_undeclared') %}
 {% if bs == "out_of_boundary" %}
 <details class="record claim out-of-boundary-collapsed"
          id="ksi-{{ clf.ksi_id }}"
-         data-status="{{ clf.status }}">
+         data-status="{{ clf.status }}"
+         data-evidence-count="{{ clf.evidence_ids | length }}">
   <summary>
     <span class="ksi-id">{{ clf.ksi_id }}</span>
     <span class="status-pill status-{{ clf.status }}">{{ clf.status | replace('_', ' ') }}</span>
@@ -402,7 +475,10 @@ _BODY_TEMPLATE = """
   {% endif %}
 </details>
 {% else %}
-<div class="record claim" id="ksi-{{ clf.ksi_id }}" data-status="{{ clf.status }}">
+<div class="record claim"
+     id="ksi-{{ clf.ksi_id }}"
+     data-status="{{ clf.status }}"
+     data-evidence-count="{{ clf.evidence_ids | length }}">
   <h3>
     <span class="ksi-id">{{ clf.ksi_id }}</span>
     <span class="status-pill status-{{ clf.status }}">{{ clf.status | replace('_', ' ') }}</span>
@@ -427,6 +503,7 @@ _BODY_TEMPLATE = """
 </div>
 {% endif %}
 {% endfor %}
+{% if classifications %}</div>{% endif %}
 
 {% if unmapped_findings %}
 <h2>Unmapped findings</h2>
