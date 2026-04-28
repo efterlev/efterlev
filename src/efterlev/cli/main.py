@@ -1574,6 +1574,46 @@ def boundary_check(
     typer.echo(f"{path}  →  {state}")
 
 
+@app.command()
+def doctor(
+    target: Path = typer.Option(
+        Path("."),
+        "--target",
+        help="Path to the workspace whose .efterlev/ state will be inspected.",
+    ),
+) -> None:
+    """Run pre-flight diagnostic checks.
+
+    Verifies Python version, ANTHROPIC_API_KEY shape, .efterlev/
+    initialization, FRMR cache freshness, and Bedrock credentials.
+    Prints per-check pass/warn/fail with remediation hints. Exits
+    non-zero only on `fail`-status checks (warnings are informational).
+
+    No network calls — strictly local introspection.
+    """
+    from efterlev.cli.doctor import has_failures, run_doctor_checks
+
+    root = target.resolve()
+    checks = run_doctor_checks(root)
+
+    badge = {"pass": "✓", "warn": "!", "fail": "✗"}
+    typer.echo("Efterlev doctor — pre-flight checks")
+    typer.echo("")
+    for c in checks:
+        line = f"  {badge[c.status]} {c.status:5}  {c.name:24}  {c.detail}"
+        typer.echo(line)
+        if c.hint:
+            typer.echo(f"           hint: {c.hint}")
+    typer.echo("")
+    fail_count = sum(1 for c in checks if c.status == "fail")
+    warn_count = sum(1 for c in checks if c.status == "warn")
+    pass_count = sum(1 for c in checks if c.status == "pass")
+    typer.echo(f"summary: {pass_count} pass, {warn_count} warn, {fail_count} fail")
+
+    if has_failures(checks):
+        raise typer.Exit(code=1)
+
+
 @report_app.command("diff")
 def report_diff(
     prior: Path = typer.Argument(
