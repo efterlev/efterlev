@@ -8,6 +8,17 @@ ksis:
       EC2 baseline; CIS, AWS FSBP, and AWS Well-Architected all flag
       http_tokens != "required" as a finding. Detector emits per-resource
       so the Gap Agent reasons about per-instance/per-template posture.
+  - id: KSI-CNA-DFP
+    coverage: partial
+    notes: >
+      Cross-mapped 2026-04-27 (Priority 1.16). KSI-CNA-DFP ("Defining
+      Functionality and Privileges") asks the customer to "strictly
+      define the functionality and privileges for infrastructure and
+      services." CM-2 is in KSI-CNA-DFP's `controls` array per FRMR
+      0.9.43-beta — clean cross-map, not invented. IMDSv2-required
+      strictly defines what the EC2 metadata service will respond to
+      (it requires session tokens — the canonical anti-Capital-One
+      scope restriction at the metadata-service surface).
 
 controls:
   - id: CM-2
