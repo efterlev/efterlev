@@ -187,13 +187,19 @@ def test_report_run_in_help() -> None:
 
 
 def test_report_run_help_documents_skip_flags() -> None:
-    # Force a wide terminal so click/typer doesn't wrap the long flag names
-    # mid-token (CI runners default to narrow widths).
-    result = runner.invoke(app, ["report", "run", "--help"], env={"COLUMNS": "200"})
+    # Click/typer wrap help output to terminal width, which on CI runners
+    # can split long flag names across line boundaries with whitespace
+    # padding. Normalize whitespace + strip ANSI codes before asserting.
+    import re
+
+    result = runner.invoke(app, ["report", "run", "--help"])
     assert result.exit_code == 0
-    assert "--skip-init" in result.output
-    assert "--skip-document" in result.output
-    assert "--skip-poam" in result.output
+    # Strip ANSI escape codes and collapse whitespace to single spaces.
+    normalized = re.sub(r"\x1b\[[0-9;]*m", "", result.output)
+    normalized = re.sub(r"\s+", " ", normalized)
+    assert "--skip-init" in normalized
+    assert "--skip-document" in normalized
+    assert "--skip-poam" in normalized
 
 
 # --- output formatting ----------------------------------------------------
