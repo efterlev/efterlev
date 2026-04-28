@@ -376,7 +376,12 @@ def _tool_agent_gap(target: Path) -> dict[str, Any]:
 
     evidence = [Evidence.model_validate(p) for _rid, p in store.iter_evidence()]
     if not evidence:
-        raise EfterlevError("no evidence records. Run efterlev_scan first.")
+        raise EfterlevError(
+            "0 evidence records in the store. The scan either hasn't run yet or "
+            "ran and matched no resources — your target may have no Terraform/"
+            ".github-workflows files in scope, or no detector applies to its "
+            "resources. Call efterlev_scan first."
+        )
 
     agent = GapAgent()
     report = agent.run(GapAgentInput(indicators=indicators, evidence=evidence))

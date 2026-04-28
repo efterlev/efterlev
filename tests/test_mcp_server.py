@@ -168,7 +168,7 @@ def test_dispatch_remediate_requires_ksi(tmp_path: Path) -> None:
 
 def test_dispatch_agent_gap_clean_error_when_no_evidence(tmp_path: Path) -> None:
     dispatch_tool("efterlev_init", {"target": str(tmp_path)})
-    with pytest.raises(EfterlevError, match="no evidence records"):
+    with pytest.raises(EfterlevError, match="0 evidence records"):
         dispatch_tool("efterlev_agent_gap", {"target": str(tmp_path)})
 
 
