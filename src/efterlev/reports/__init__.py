@@ -25,6 +25,7 @@ from efterlev.reports.documentation_report import (
     render_documentation_report_html,
     render_documentation_report_json,
 )
+from efterlev.reports.gap_diff import GapDiff, KsiDiffEntry, compute_gap_diff
 from efterlev.reports.gap_report import (
     GAP_REPORT_JSON_SCHEMA_VERSION,
     render_gap_report_html,
@@ -43,6 +44,9 @@ __all__ = [
     "GAP_REPORT_JSON_SCHEMA_VERSION",
     "RECORDS_STYLESHEET",
     "REMEDIATION_REPORT_JSON_SCHEMA_VERSION",
+    "GapDiff",
+    "KsiDiffEntry",
+    "compute_gap_diff",
     "render_base_document",
     "render_documentation_report_html",
     "render_documentation_report_json",
