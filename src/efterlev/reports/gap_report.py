@@ -52,10 +52,98 @@ from typing import Any
 from jinja2 import Environment, select_autoescape
 
 from efterlev.agents import GapReport
-from efterlev.models import Evidence
+from efterlev.models import Evidence, Indicator, Theme
 from efterlev.reports.html import DRAFT_BANNER_HTML, render_base_document
 
 GAP_REPORT_JSON_SCHEMA_VERSION = "1.0"
+
+# Coverage-matrix CSS, prepended to the body fragment. Self-contained;
+# uses the existing .status-* color palette from the base stylesheet so
+# the matrix legend pills match the per-KSI status pills below.
+_COVERAGE_MATRIX_CSS = """
+<style>
+  .coverage-matrix {
+    margin: 8px 0 24px 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .matrix-theme {
+    border: 1px solid #e3e8ef;
+    border-radius: 6px;
+    padding: 10px 12px;
+    background: #fbfcfd;
+  }
+  .matrix-theme-header {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+  }
+  .matrix-theme-id {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-weight: 700;
+    color: #0a2540;
+    background: #eaeef2;
+    padding: 1px 8px;
+    border-radius: 3px;
+  }
+  .matrix-theme-name { color: #1a1a1a; }
+  .matrix-theme-counts {
+    margin-left: auto;
+    font-size: 12px;
+    color: #4a4a4a;
+  }
+  .matrix-theme-cells {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .matrix-cell {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 52px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    text-decoration: none;
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    border: 1px solid transparent;
+    transition: transform 0.04s ease;
+  }
+  .matrix-cell:hover { transform: translateY(-1px); border-color: #0a2540; }
+  .matrix-cell.status-implemented    { background: #d1f4da; color: #0a4a17; }
+  .matrix-cell.status-partial        { background: #fff2c2; color: #6a4e00; }
+  .matrix-cell.status-not_implemented { background: #fddede; color: #7a1f1f; }
+  .matrix-cell.status-not_applicable { background: #eaeef2; color: #444c56; }
+  .matrix-cell.status-evidence_layer_inapplicable {
+    background: #d6e5fa; color: #0a3a7a;
+  }
+  .matrix-cell.status-unclassified {
+    background: #f5f6f8; color: #6a737d; border-color: #e3e8ef;
+  }
+  .matrix-cell-suffix {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  .matrix-legend { margin: -4px 0 12px 0; }
+  .matrix-cell-legend {
+    display: inline-block;
+    padding: 1px 8px;
+    border-radius: 3px;
+    margin-left: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    text-transform: uppercase;
+  }
+  .matrix-cell-legend.status-unclassified {
+    background: #f5f6f8; color: #6a737d; border: 1px solid #e3e8ef;
+  }
+</style>
+"""
 
 _BODY_TEMPLATE = """
 {{ draft_banner }}
@@ -78,6 +166,42 @@ _BODY_TEMPLATE = """
   {% if workspace_boundary_state != "boundary_undeclared" %}·
   Boundary: <strong>{{ workspace_boundary_state | replace('_', ' ') }}</strong>{% endif %}
 </p>
+
+{% if coverage_matrix %}
+<h2>Coverage matrix</h2>
+<p class="meta matrix-legend">
+  Every cell is one KSI; color = the Gap Agent's classification.
+  <span class="matrix-cell-legend status-implemented">implemented</span>
+  <span class="matrix-cell-legend status-partial">partial</span>
+  <span class="matrix-cell-legend status-not_implemented">not implemented</span>
+  <span class="matrix-cell-legend status-evidence_layer_inapplicable"
+        >evidence layer inapplicable</span>
+  <span class="matrix-cell-legend status-not_applicable">not applicable</span>
+  <span class="matrix-cell-legend status-unclassified">unclassified</span>
+</p>
+<div class="coverage-matrix">
+{% for theme in coverage_matrix %}
+  <div class="matrix-theme">
+    <div class="matrix-theme-header">
+      <span class="matrix-theme-id">{{ theme.id }}</span>
+      <span class="matrix-theme-name">{{ theme.name }}</span>
+      <span class="matrix-theme-counts">
+        {{ theme.classified_count }} / {{ theme.ksis | length }} classified
+      </span>
+    </div>
+    <div class="matrix-theme-cells">
+      {% for cell in theme.ksis %}
+      <a class="matrix-cell status-{{ cell.status }}"
+         href="#{{ cell.anchor }}"
+         title="{{ cell.id }} — {{ cell.name }} — {{ cell.status | replace('_', ' ') }}">
+        <span class="matrix-cell-suffix">{{ cell.suffix }}</span>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+{% endfor %}
+</div>
+{% endif %}
 
 <h2>Summary</h2>
 <table>
@@ -109,7 +233,7 @@ _BODY_TEMPLATE = """
 {% for clf in classifications %}
 {% set bs = classification_boundary_state.get(clf.ksi_id, 'boundary_undeclared') %}
 {% if bs == "out_of_boundary" %}
-<details class="record claim out-of-boundary-collapsed">
+<details class="record claim out-of-boundary-collapsed" id="ksi-{{ clf.ksi_id }}">
   <summary>
     <span class="ksi-id">{{ clf.ksi_id }}</span>
     <span class="status-pill status-{{ clf.status }}">{{ clf.status | replace('_', ' ') }}</span>
@@ -130,7 +254,7 @@ _BODY_TEMPLATE = """
   {% endif %}
 </details>
 {% else %}
-<div class="record claim">
+<div class="record claim" id="ksi-{{ clf.ksi_id }}">
   <h3>
     <span class="ksi-id">{{ clf.ksi_id }}</span>
     <span class="status-pill status-{{ clf.status }}">{{ clf.status | replace('_', ' ') }}</span>
@@ -198,6 +322,8 @@ def render_gap_report_html(
     frmr_version: str,
     evidence: list[Evidence] | None = None,
     generated_at: datetime | None = None,
+    themes: dict[str, Theme] | None = None,
+    indicators: dict[str, Indicator] | None = None,
 ) -> str:
     """Return a complete HTML document rendering of a GapReport.
 
@@ -206,6 +332,12 @@ def render_gap_report_html(
     an "attestation" pill so reviewers can tell human-signed evidence
     from scanner-derived evidence at a glance. When `evidence` is None
     or empty, citations render without badges (scanner-only default).
+
+    Pass `themes` + `indicators` (from `FrmrDocument.themes` /
+    `FrmrDocument.indicators`) to render the coverage matrix at the top:
+    one cell per KSI in the FRMR baseline, color-coded by classification
+    status. KSIs the agent didn't classify show as "unclassified" (gray).
+    Cells link via anchor to the per-KSI classification card below.
 
     Boundary scoping (Priority 4.2, 2026-04-27): each Evidence carries a
     `boundary_state`. The renderer derives:
@@ -229,6 +361,7 @@ def render_gap_report_html(
         report, evidence_boundary_state
     )
     workspace_boundary_state = _resolve_workspace_boundary_state(evidence_boundary_state)
+    coverage_matrix = build_coverage_matrix(report, themes, indicators)
 
     body = template.render(
         classifications=report.ksi_classifications,
@@ -240,6 +373,7 @@ def render_gap_report_html(
         detector_by_id=detector_by_id,
         classification_boundary_state=classification_boundary_state,
         workspace_boundary_state=workspace_boundary_state,
+        coverage_matrix=coverage_matrix,
     )
 
     when = (generated_at or datetime.now().astimezone()).isoformat(timespec="seconds")
@@ -249,7 +383,7 @@ def render_gap_report_html(
             f"{len(report.ksi_classifications)} KSI classification(s), "
             f"{len(report.unmapped_findings)} unmapped finding(s)"
         ),
-        body_html=body,
+        body_html=_COVERAGE_MATRIX_CSS + body,
         generated_at=when,
     )
 
@@ -261,6 +395,8 @@ def render_gap_report_json(
     frmr_version: str,
     evidence: list[Evidence] | None = None,
     generated_at: datetime | None = None,
+    themes: dict[str, Theme] | None = None,
+    indicators: dict[str, Indicator] | None = None,
 ) -> dict[str, Any]:
     """Return the gap report as a JSON-serializable dict.
 
@@ -272,6 +408,10 @@ def render_gap_report_json(
     The boundary-state derivation is identical to the HTML renderer's:
     each classification is annotated with the worst-case boundary state
     across its cited evidence (with `in_boundary` winning when present).
+
+    Pass `themes` + `indicators` to include the coverage matrix in the
+    sidecar — same data the HTML renders, structured for JS-driven UIs
+    or 3PAO ingest tooling that wants the full theme x KSI grid.
     """
     evidence_list = evidence or []
     evidence_boundary_state: dict[str, str] = {
@@ -282,6 +422,7 @@ def render_gap_report_json(
     )
     workspace_boundary_state = _resolve_workspace_boundary_state(evidence_boundary_state)
     when = (generated_at or datetime.now().astimezone()).isoformat(timespec="seconds")
+    matrix = build_coverage_matrix(report, themes, indicators)
 
     return {
         "schema_version": GAP_REPORT_JSON_SCHEMA_VERSION,
@@ -311,7 +452,87 @@ def render_gap_report_json(
             for uf in report.unmapped_findings
         ],
         "claim_record_ids": list(report.claim_record_ids),
+        "coverage_matrix": matrix,
     }
+
+
+def build_coverage_matrix(
+    report: GapReport,
+    themes: dict[str, Theme] | None,
+    indicators: dict[str, Indicator] | None,
+) -> list[dict[str, Any]] | None:
+    """Build the coverage-matrix data structure: themes x KSIs x status.
+
+    Returns None when `themes` or `indicators` is missing — the renderer
+    treats that as "no matrix" and omits the section. Otherwise returns
+    one entry per theme, with a sorted list of KSI cells per theme:
+
+      [
+        {
+          "id": "<theme_id>",
+          "name": "<theme name>",
+          "ksis": [
+            {
+              "id": "<KSI-XX-XXX>",
+              "name": "<KSI name>",
+              "suffix": "<XXX>",
+              "status": "<status | unclassified>",
+              "anchor": "ksi-<KSI-XX-XXX>"
+            },
+            ...
+          ],
+          "classified_count": <int>
+        },
+        ...
+      ]
+
+    KSIs the agent classified are mapped to their actual status; KSIs in
+    the FRMR baseline that the agent didn't touch land in
+    `status="unclassified"` (rendered with a neutral-gray cell).
+    """
+    if not themes or not indicators:
+        return None
+
+    status_by_ksi: dict[str, str] = {clf.ksi_id: clf.status for clf in report.ksi_classifications}
+
+    out: list[dict[str, Any]] = []
+    for theme_id in sorted(themes):
+        theme = themes[theme_id]
+        ksis_in_theme = sorted(
+            (ind for ind in indicators.values() if ind.theme == theme_id),
+            key=lambda i: i.id,
+        )
+        if not ksis_in_theme:
+            continue
+        cells: list[dict[str, Any]] = []
+        classified_count = 0
+        for ind in ksis_in_theme:
+            status = status_by_ksi.get(ind.id, "unclassified")
+            if status != "unclassified":
+                classified_count += 1
+            # The KSI suffix — last 3 chars after the second hyphen.
+            # "KSI-SVC-SNT" → "SNT". Falls back to the full id if the
+            # shape is unexpected.
+            parts = ind.id.split("-", 2)
+            suffix = parts[2] if len(parts) == 3 else ind.id
+            cells.append(
+                {
+                    "id": ind.id,
+                    "name": ind.name,
+                    "suffix": suffix,
+                    "status": status,
+                    "anchor": f"ksi-{ind.id}",
+                }
+            )
+        out.append(
+            {
+                "id": theme.id,
+                "name": theme.name,
+                "ksis": cells,
+                "classified_count": classified_count,
+            }
+        )
+    return out
 
 
 def _resolve_classification_boundary_states(

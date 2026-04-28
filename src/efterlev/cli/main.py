@@ -719,6 +719,8 @@ def agent_gap(
         frmr_version=frmr_doc.version,
         evidence=evidence,
         generated_at=generated_at,
+        themes=frmr_doc.themes,
+        indicators=frmr_doc.indicators,
     )
     html_path = reports_dir / f"gap-{timestamp}.html"
     html_path.write_text(html_body, encoding="utf-8")
@@ -729,6 +731,8 @@ def agent_gap(
         frmr_version=frmr_doc.version,
         evidence=evidence,
         generated_at=generated_at,
+        themes=frmr_doc.themes,
+        indicators=frmr_doc.indicators,
     )
     json_path = reports_dir / f"gap-{timestamp}.json"
     json_path.write_text(json.dumps(json_data, indent=2, sort_keys=True), encoding="utf-8")
