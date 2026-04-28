@@ -382,10 +382,11 @@ def test_in_boundary_classification_renders_in_boundary_pill() -> None:
         _report(classifications=[clf]), evidence=[ev], **_baseline_kwargs()
     )
     assert "boundary-in_boundary" in html
-    # Not a collapsed details — in-boundary findings stay visible. The CSS
-    # stylesheet contains the class definition (and the word `<details>` in
-    # one of its comments); the assertion targets actual HTML element usage.
-    assert "<details class=" not in html
+    # Not collapsed under the out-of-boundary <details> — in-boundary
+    # findings stay visible. The drill-down `<details class="evidence-
+    # drilldown">` may exist (Priority 2.9, 2026-04-28) but the
+    # out-of-boundary-collapsed wrapper must not.
+    assert '<details class="record claim out-of-boundary-collapsed"' not in html
 
 
 def test_out_of_boundary_classification_collapses_under_details() -> None:
@@ -423,5 +424,7 @@ def test_mixed_boundary_classification_resolves_to_in_boundary() -> None:
     html = render_gap_report_html(
         _report(classifications=[clf]), evidence=[in_ev, out_ev], **_baseline_kwargs()
     )
-    assert "<details class=" not in html
+    # Not collapsed under out-of-boundary — the in_boundary citation wins.
+    # Drill-down <details class="evidence-drilldown"> may still appear.
+    assert '<details class="record claim out-of-boundary-collapsed"' not in html
     assert "boundary-in_boundary" in html
