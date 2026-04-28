@@ -4,6 +4,8 @@
 
 Scans your Terraform for KSI-level evidence. Drafts FRMR-compatible validation data for your 3PAO. Proposes code-level remediations you can apply today. Runs locally — no SaaS, no telemetry, no procurement cycle.
 
+Sits **alongside AWS Config / Security Hub / CloudTrail**, not in place of them: AWS-native services evaluate runtime state on a 3-day cadence; Efterlev evaluates pre-deploy IaC on every file-save. A FedRAMP 20x customer needs both — see [docs/aws-coexistence.md](./docs/aws-coexistence.md) for the fit.
+
 Built for the VP Eng or DevSecOps lead whose CEO just told them "we need FedRAMP" and who needs to know, by Monday, where they actually stand.
 
 Pronounced "EF-ter-lev." From Swedish *efterlevnad* (compliance).
@@ -50,6 +52,28 @@ Efterlev's current focus is SaaS companies pursuing their first FedRAMP Moderate
 
 ---
 
+## Where Efterlev fits
+
+If you arrived from AWS's [FedRAMP 20x KSI deep-dive blog](https://aws.amazon.com/blogs/publicsector/deep-dive-into-fedramp-20x-key-security-indicators-decoding-the-63-ksis/) or are already running AWS Config + Security Hub for compliance, here's how Efterlev fits next to that pattern:
+
+| | Efterlev | AWS-native (Config / Security Hub / CloudTrail) |
+|---|---|---|
+| **When** it fires | Pre-deploy, on every `git commit` or file-save | Post-deploy, on a 3-day cadence in production |
+| **What** it reads | Terraform `.tf` files + `.github/workflows/*.yml` | Live AWS API state, runtime events |
+| **What** it produces | A 3PAO-ready CSX-SUM attestation summary (`documentation-{ts}.json`) + categorized POA&M | Runtime telemetry: Config evaluation results, Security Hub findings, CloudTrail logs |
+| **Who** it's for | The dev team writing Terraform + the compliance team preparing the package | The runtime evidence layer that backs the package |
+| **Cost** | Free (Apache-2.0, runs locally) | AWS spend + setup time |
+
+**They're complementary, not competing.** A FedRAMP 20x customer pursuing the 70%-of-63 automation threshold needs both:
+
+- **Day 1**, run `efterlev report run` to see your current posture in 10 minutes — no spend, no procurement.
+- **Steady-state**, AWS Config + Security Hub provide the runtime evidence that backs each KSI attestation Efterlev drafted.
+- **Continuously**, `efterlev report run --watch` re-runs the pipeline on every file save (debounced 2s) — the dev-loop layer AWS-native services structurally cannot provide, since runtime services need a deployed resource to evaluate.
+
+Full strategic mapping in [docs/aws-coexistence.md](./docs/aws-coexistence.md).
+
+---
+
 ## What it does
 
 - **Scans** Terraform source for evidence of FedRAMP 20x Key Security Indicators (KSIs), backed by the underlying NIST 800-53 Rev 5 controls those KSIs reference
@@ -57,6 +81,7 @@ Efterlev's current focus is SaaS companies pursuing their first FedRAMP Moderate
 - **Proposes** code-level remediation diffs for detected gaps
 - **Emits** machine-readable validation data ready for 3PAO review and the FedRAMP 20x automated validation pipeline
 - **Traces** every generated claim back to the source line that produced it
+- **Watches**: `efterlev report run --watch` re-runs the full pipeline on every save (debounced 2s) — the pre-deploy feedback loop AWS Config / Security Hub structurally cannot provide
 
 Everything runs locally. The only outbound network call is to your configured LLM endpoint for reasoning tasks (narrative drafting, remediation proposals). Scanner output is deterministic and offline.
 
@@ -66,7 +91,8 @@ Everything runs locally. The only outbound network call is to your configured LL
 - It does not certify compliance. It produces drafts that accelerate the human review cycle.
 - It does not guarantee generated narratives are correct. Every LLM-generated artifact is marked "DRAFT — requires human review."
 - It does not cover SOC 2, ISO 27001, HIPAA, or GDPR. Other tools serve those well; see [COMPETITIVE_LANDSCAPE.md](./COMPETITIVE_LANDSCAPE.md) for the landscape.
-- It does not scan live cloud infrastructure yet. v1.
+- It does not scan live cloud infrastructure yet. v1.5+.
+- It does not replace AWS Config / Security Hub for runtime evaluation — those produce the runtime evidence that backs Efterlev's attestations. See [docs/aws-coexistence.md](./docs/aws-coexistence.md).
 
 See [LIMITATIONS.md](./LIMITATIONS.md) for the honest full accounting.
 
@@ -419,6 +445,19 @@ evidence.yaml, fixtures/, and README.md.
 > POA&M severity-ordering + the gap report's status-filter pills implement CSX-ORD.
 > See [docs/csx-mapping.md](./docs/csx-mapping.md) for the full mapping and
 > [docs/aws-ksi-blog-analysis-2026-04-28.md](./docs/aws-ksi-blog-analysis-2026-04-28.md) for the analysis.
+
+> **Coverage relative to AWS-native services (FedRAMP 20x Phase 2 70% threshold).** FedRAMP 20x Phase 2
+> requires automated validation for at least **70% of the KSIs** (44 of 63 = 70% of the AWS framing,
+> or 42 of 60 = 70% of the thematic-only count). **Efterlev covers 30 thematic KSIs at the IaC layer.**
+> AWS's deep-dive blog explicitly maps AWS-native services (Config, Security Hub, CloudTrail,
+> Inspector, KMS, IAM Identity Center, Access Analyzer, EventBridge) to roughly **14 named KSIs**
+> (mostly in CNA, IAM, MLA, SVC themes) plus partial coverage across many more. The overlap with
+> Efterlev is ~10–12 KSIs in the same themes, but at a different layer: Efterlev catches the IaC
+> misconfig pre-deploy; AWS-native confirms the runtime behavior. **Together they comfortably exceed
+> the 70% threshold; neither alone hits it.** The non-overlapping pieces — KSI-CMT-VTD/RMV/LMC,
+> KSI-SCR-MIT, KSI-IAM-AAM, KSI-PIY-GIV, KSI-RPL-TRC, KSI-SVC-RUD/VCM (Efterlev-only at IaC) and
+> real-time GuardDuty / Inspector runtime CVEs / Config drift over time (AWS-native-only at runtime)
+> — are why a serious 20x customer wires both. See [docs/aws-coexistence.md](./docs/aws-coexistence.md).
 
 **Agents (3).** Gap (Opus 4.7), Documentation (Sonnet 4.6), Remediation (Opus 4.7). Each has its system prompt in a sibling `.md` file — see `src/efterlev/agents/*_prompt.md`. Prompts include explicit per-run-nonced-fence rules and cite-by-fenced-id discipline (see Phase 2 post-review fixup F below).
 
