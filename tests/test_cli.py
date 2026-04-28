@@ -280,7 +280,7 @@ def test_agent_document_without_classifications_prints_error(
     # so the CLI should say so rather than calling the LLM.
     result = runner.invoke(app, ["agent", "document", "--target", str(tmp_path)])
     assert result.exit_code == 1
-    assert "no Gap Agent classifications" in result.output
+    assert "0 Gap Agent classifications" in result.output
 
 
 def test_agent_gap_without_evidence_prints_error(tmp_path: pytest.TempPathFactory) -> None:
@@ -291,7 +291,7 @@ def test_agent_gap_without_evidence_prints_error(tmp_path: pytest.TempPathFactor
     # detect the empty evidence set and say so.
     result = runner.invoke(app, ["agent", "gap", "--target", str(tmp_path)])
     assert result.exit_code == 1
-    assert "no evidence records" in result.output
+    assert "0 evidence records" in result.output
 
 
 def test_scan_missing_efterlev_dir_prints_error(tmp_path: pytest.TempPathFactory) -> None:

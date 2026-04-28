@@ -151,11 +151,11 @@ def test_skip_all_optional_stages(  # type: ignore[no-untyped-def]
 # --- failure propagation --------------------------------------------------
 
 
-def test_pipeline_stops_on_non_zero_exit(  # type: ignore[no-untyped-def]
+def test_pipeline_stops_on_raised_typer_exit(  # type: ignore[no-untyped-def]
     tmp_path: Path, monkeypatch
 ) -> None:
     """If a stage raises typer.Exit with non-zero code, the pipeline
-    stops and the orchestrator propagates that code."""
+    stops and the orchestrator propagates that code (exception path)."""
     from efterlev.cli import main as cli_main
 
     calls: list[tuple[str, list[str]]] = []
@@ -175,6 +175,38 @@ def test_pipeline_stops_on_non_zero_exit(  # type: ignore[no-untyped-def]
     assert "agent gap" in stages
     assert "agent document" not in stages
     assert "poam" not in stages
+
+
+def test_pipeline_stops_on_returned_non_zero_exit_code(  # type: ignore[no-untyped-def]
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Click with `standalone_mode=False` RETURNS the exit code as an int
+    rather than raising — that's the real production code path. The
+    orchestrator must catch that case too. (This test guards the bug
+    that PR #66 missed: failed stages slipping through because the
+    orchestrator only caught the exception path.)"""
+    from efterlev.cli import main as cli_main
+
+    calls: list[tuple[str, list[str]]] = []
+
+    def returning_app(args: list[str], standalone_mode: bool = False) -> int | None:
+        stage = f"agent {args[1]}" if args[0] == "agent" else args[0]
+        calls.append((stage, list(args)))
+        if stage == "agent gap":
+            return 3
+        return None
+
+    monkeypatch.setattr(cli_main, "app", returning_app, raising=True)
+
+    result = runner.invoke(app, ["report", "run", "--target", str(tmp_path), "--skip-init"])
+    assert result.exit_code == 3
+    # Stages after `agent gap` did NOT run.
+    stages = [name for name, _ in calls]
+    assert "agent gap" in stages
+    assert "agent document" not in stages
+    assert "poam" not in stages
+    # And — crucially — the orchestrator did NOT print "Pipeline complete."
+    assert "Pipeline complete" not in result.output
 
 
 # --- subcommand registration ----------------------------------------------

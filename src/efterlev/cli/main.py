@@ -532,7 +532,9 @@ def poam(
         classifications = reconstruct_classifications_from_store(rows)
         if not classifications:
             typer.echo(
-                "error: no Gap Agent classifications in the store. Run `efterlev agent gap` first.",
+                "error: 0 Gap Agent classifications in the store. The Gap Agent "
+                "either hasn't run yet, or ran with no evidence to classify "
+                "(check `efterlev scan` first if you skipped that stage).",
                 err=True,
             )
             raise typer.Exit(code=1)
@@ -679,7 +681,11 @@ def agent_gap(
             evidence = [Evidence.model_validate(p) for _rid, p in store.iter_evidence()]
             if not evidence:
                 typer.echo(
-                    "error: no evidence records in the store. Run `efterlev scan` first.",
+                    "error: 0 evidence records in the store. The scan either hasn't run "
+                    "yet or ran and matched no resources — your target may have no "
+                    "Terraform/.github-workflows files in scope, or the 43 detectors "
+                    "may not apply to its resources. Run `efterlev scan --target <path>` "
+                    "to verify.",
                     err=True,
                 )
                 raise typer.Exit(code=1)
@@ -839,8 +845,9 @@ def agent_document(
 
             if not classifications:
                 typer.echo(
-                    "error: no Gap Agent classifications in the store. "
-                    "Run `efterlev agent gap` first.",
+                    "error: 0 Gap Agent classifications in the store. The Gap Agent "
+                    "either hasn't run yet, or ran with no evidence to classify "
+                    "(check `efterlev scan` first if you skipped that stage).",
                     err=True,
                 )
                 raise typer.Exit(code=1)
@@ -1700,8 +1707,15 @@ def report_run(
             typer.echo(f"━━━ [{stage_idx}/{len(stages)}] {name} ━━━")
             typer.echo("")
             try:
-                app(args, standalone_mode=False)
+                # `standalone_mode=False` makes Click RETURN an int exit code
+                # on `typer.Exit` (rather than raising). We must check the
+                # return value as well as the exception path; otherwise a
+                # stage that raises `typer.Exit(code=1)` slips through and
+                # the orchestrator falsely declares success.
+                rv = app(args, standalone_mode=False)
             except typer.Exit as e:
+                # Defensive — older click versions (or non-standalone wrappers)
+                # may still raise here.
                 if e.exit_code and e.exit_code != 0:
                     typer.echo(
                         f"\nerror: pipeline stopped — `{name}` exited with code {e.exit_code}",
@@ -1709,7 +1723,6 @@ def report_run(
                     )
                     raise
             except SystemExit as e:
-                # standalone_mode=False should suppress these, but be defensive.
                 code = e.code if isinstance(e.code, int) else 1
                 if code != 0:
                     typer.echo(
@@ -1717,6 +1730,16 @@ def report_run(
                         err=True,
                     )
                     raise typer.Exit(code=code) from e
+            else:
+                # Returned-int-exit-code path. Click sets `rv` to the int
+                # the stage raised via `typer.Exit(code=N)` when
+                # standalone_mode=False; non-zero is failure.
+                if isinstance(rv, int) and rv != 0:
+                    typer.echo(
+                        f"\nerror: pipeline stopped — `{name}` exited with code {rv}",
+                        err=True,
+                    )
+                    raise typer.Exit(code=rv)
 
         typer.echo("")
         typer.echo("✓ Pipeline complete.")
