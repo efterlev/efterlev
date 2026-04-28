@@ -91,8 +91,13 @@ def test_top_level_keys_match_schema() -> None:
         "ksi_classifications",
         "unmapped_findings",
         "claim_record_ids",
+        # Priority 2.4 (2026-04-27): coverage matrix added; null when no
+        # themes/indicators are passed (which is the default in this test).
+        "coverage_matrix",
     }
     assert set(out.keys()) == expected
+    # When themes+indicators not supplied, the matrix is None.
+    assert out["coverage_matrix"] is None
 
 
 def test_metadata_propagated() -> None:
