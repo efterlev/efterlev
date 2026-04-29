@@ -81,7 +81,7 @@ bedrock = [
 # Docs site build (SPEC-38, A6 gate). Pin majors so a Material/MkDocs
 # breaking-change doesn't silently break the site build.
 docs = [
-    "mkdocs>=1.6,<2",
+    "mkdocs>=1.6.1,<2",
     "mkdocs-material>=9.5,<10",
     "pymdown-extensions>=10.7,<11",
 ]
