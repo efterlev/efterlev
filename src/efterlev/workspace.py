@@ -12,12 +12,13 @@ Phase 2c's `scan_terraform` will load the cached catalogs from
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from efterlev.config import BaselineConfig, Config, LLMConfig, save_config
 from efterlev.errors import ConfigError
 from efterlev.frmr import load_frmr
+from efterlev.frmr.freshness import check_catalog_freshness
 from efterlev.oscal import load_oscal_800_53
 from efterlev.paths import vendored_catalogs_dir, verify_catalog_hashes
 from efterlev.provenance import ProvenanceStore
@@ -44,6 +45,12 @@ class InitResult:
     num_controls: int
     num_enhancements: int
     receipt_record_id: str
+    # Non-blocking freshness warnings produced by `check_catalog_freshness`.
+    # Empty when the vendored catalog is current; non-empty when the catalog
+    # is older than STALE_THRESHOLD_DAYS or when today is past the CR26
+    # expected-release window. CLI emits each to stderr after the success
+    # message; programmatic callers can ignore or surface them as needed.
+    freshness_warnings: list[str] = field(default_factory=list)
 
 
 def init_workspace(
@@ -135,4 +142,5 @@ def init_workspace(
         num_controls=len(oscal_cat.controls),
         num_enhancements=len(oscal_cat.enhancements_by_id),
         receipt_record_id=receipt.record_id,
+        freshness_warnings=check_catalog_freshness(frmr_doc),
     )

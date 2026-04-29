@@ -255,6 +255,13 @@ def init(
     )
     typer.echo(f"  load receipt:          {result.receipt_record_id}")
 
+    # Catalog-freshness nudges go to stderr after the success block so they
+    # don't get lost in the init banner. Non-blocking: init has already
+    # succeeded by this point.
+    for warning in result.freshness_warnings:
+        typer.echo("")
+        typer.echo(warning, err=True)
+
 
 @app.command()
 def scan(
