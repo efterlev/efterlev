@@ -417,9 +417,14 @@ def test_csx_ord_sort_with_empty_sequence_falls_back_to_alphabetical() -> None:
 
 
 def test_severity_sort_is_deterministic_across_input_orderings() -> None:
+    # This lock was previously implicit; PR #85 made it explicit after
+    # finding input-order dependence in the pre-#85 sort code (the
+    # primitive preserved input order, so two runs with the same
+    # classifications in different orders produced different markdown).
+    # The lock is required for diff-against-prior-run workflows and for
+    # reproducible CI artifacts.
     # Same set of classifications in two different input orders must
-    # produce byte-identical markdown — necessary for diff-against-prior-run
-    # workflows and for reproducible CI artifacts.
+    # produce byte-identical markdown.
     cls_a = [
         _clf("KSI-B", status="partial"),
         _clf("KSI-A", status="not_implemented"),
