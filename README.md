@@ -459,9 +459,13 @@ evidence.yaml, fixtures/, and README.md.
 > (mostly in CNA, IAM, MLA, SVC themes) plus partial coverage across many more. The overlap with
 > Efterlev is ~10–12 KSIs in the same themes, but at a different layer: Efterlev catches the IaC
 > misconfig pre-deploy; AWS-native confirms the runtime behavior. **Honest union: ~33 of 63 KSIs (~52%)** —
-> distinct layers, not double-counted. Reaching the 70% threshold takes additional procedural Evidence
-> Manifests for AFR / CED / INR themes, plus runtime telemetry beyond Config + Security Hub
-> (GuardDuty, Inspector findings on a 3-day cadence), plus the customer's own attestations.
+> distinct layers, not double-counted. Important nuance about the threshold itself: FedRAMP 20x Phase 2's 70%
+> language asks specifically for **automated** validation. Procedural Evidence Manifests cover the AFR /
+> CED / INR themes (which the scanner can't see) but don't count toward the *automated*-validation bar —
+> they close the KSI coverage gap, not the automation gap. Reaching 70% automated coverage takes a runtime
+> telemetry pipeline (GuardDuty findings on a 3-day cadence, Inspector continuous scans, Config
+> conformance pack evaluations, Security Hub findings) on top of Efterlev's pre-deploy IaC layer +
+> AWS-native services' runtime evaluation layer.
 > The non-overlapping pieces — KSI-CMT-VTD/RMV/LMC, KSI-SCR-MIT, KSI-IAM-AAM, KSI-PIY-GIV, KSI-RPL-TRC,
 > KSI-SVC-RUD/VCM (Efterlev-only at IaC) and real-time GuardDuty / Inspector runtime CVEs / Config drift
 > over time (AWS-native-only at runtime) — are why a serious 20x customer wires both. See

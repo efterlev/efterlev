@@ -88,7 +88,7 @@ adoption sequence looks like this:
 
 | Phase | What you do | What's involved |
 |---|---|---|
-| **Day 1** (the moment your CEO says "we need FedRAMP") | `efterlev report run` against your existing Terraform | The deterministic scan completes in seconds for a small Terraform tree; the LLM-backed Gap + Documentation stages typically take a few more minutes per KSI (~30-60s/KSI on Sonnet 4.6 for documentation, faster for Gap on Opus). No spend, no procurement, posture report in hand. |
+| **Day 1** (the moment your CEO says "we need FedRAMP") | `efterlev report run` against your existing Terraform | The deterministic scan completes in seconds for a small Terraform tree. The LLM-backed Gap stage runs in roughly a minute on Opus 4.7. The Documentation Agent's per-KSI narrative pass runs ~30-60s/KSI on Sonnet 4.6, so a full 60-KSI baseline takes **roughly 30 minutes to an hour** end-to-end on first run. No spend, no procurement, posture report in hand. |
 | **Week 1-4** | Iterate on `efterlev report run --watch` while the team patches gaps | dev-loop feedback at file-save cadence; AWS-native services not yet stood up |
 | **Month 1-3** | Stand up AWS Config + Security Hub + LZA at GovCloud-scale | typically with a consultant; this is the runtime evidence layer |
 | **Authorization year** | Both sources feed the 3PAO package | Efterlev produces the per-KSI attestation summary; AWS-native produces the runtime evidence backing it |
@@ -164,16 +164,23 @@ single tool. Honest accounting on these two tools alone:
 - Union ≈ 30 + 14 − 11 = **~33 of 63 KSIs** (~52%) — distinct layers,
   not double-counted.
 
-That's *below* the 70% threshold, even before accounting for the
-3 procedural CSX KSIs and the AFR / CED / INR themes that need
-human-signed Evidence Manifests rather than scanner output. Closing
-the rest of the gap takes additional procedural manifests, runtime
-telemetry beyond Config + Security Hub (e.g., GuardDuty, Inspector
-findings on a 3-day cadence), and the customer's own attestations
-for the procedural-only KSIs. The phrase "Efterlev + AWS-native is
-all you need" is not accurate; "Efterlev + AWS-native + procedural
-manifests + the rest of your CSP runtime evidence" gets you toward
-the 70% threshold.
+That's *below* the 70% threshold. Important nuance about the
+threshold itself: FedRAMP 20x Phase 2's 70% language asks specifically
+for *automated* validation. Procedural Evidence Manifests are
+human-signed attestations, not automated validation — they cover the
+AFR / CED / INR themes and the 3 procedural CSX KSIs (which the
+scanner can't see at all), but they don't count toward the 70%
+*automated*-validation bar. Reaching 70% automated coverage on a
+procedural-heavy posture means standing up runtime telemetry
+(GuardDuty findings on a 3-day cadence, Inspector continuous scans,
+Config conformance pack evaluations, Security Hub findings) on top of
+Efterlev's pre-deploy IaC layer + AWS-native services' runtime
+evaluation layer. Manifests close the *KSI* coverage gap; runtime
+telemetry closes the *automated-validation* gap.
+
+The phrase "Efterlev + AWS-native is all you need" is not accurate;
+"Efterlev pre-deploy + AWS-native runtime + a procedural manifest
+layer + a runtime-telemetry pipeline" is the honest picture.
 
 ---
 
@@ -215,9 +222,9 @@ A buyer arriving from the AWS blog post should see, in this order:
 3. "If you're already running AWS Config and Security Hub, Efterlev
    gives you the dev-loop layer they structurally cannot — feedback
    on every file-save."
-4. "Together, Efterlev and AWS-native cover roughly half the 63-KSI
-   surface at distinct layers; reaching the 70% Phase 2 threshold
-   takes additional procedural manifests + runtime telemetry beyond
-   either tool alone."
+4. "Together, Efterlev (pre-deploy IaC) and AWS-native (runtime
+   telemetry) cover distinct layers of the 63-KSI surface; a serious
+   FedRAMP 20x customer typically wires both, plus a runtime-telemetry
+   pipeline on a 3-day cadence."
 
 These are four sentences. Use them.
