@@ -235,7 +235,7 @@ strongly enough that no audit-side change is recommended.
 | `aws.federated_identity_providers` | KSI-IAM-APM | IAM Identity Center / federated SSO is passwordless auth. |
 | `aws.iam_admin_policy_usage` | KSI-IAM-ELP | Admin policies violate least privilege; flagging them evidences the discipline. |
 | `aws.iam_inline_policies_audit` | KSI-IAM-ELP | Inline policies bypass managed-policy review. |
-| `aws.iam_managed_via_terraform` | KSI-IAM-AAM | Terraform-managed IAM IS automated lifecycle. |
+| `aws.iam_managed_via_terraform` | KSI-IAM-AAM | Terraform-managed IAM IS automated lifecycle.[¹](#footnote-iam-aam) |
 | `aws.iam_service_account_keys_age` | KSI-IAM-SNU | Aged keys are insecure for non-user auth. |
 | `aws.kms_customer_managed_keys` | KSI-SVC-ASM | CMKs evidence customer-managed key lifecycle. |
 | `aws.kms_key_rotation` | KSI-SVC-ASM | Rotation is in the KSI moderate statement verbatim. |
@@ -246,7 +246,7 @@ strongly enough that no audit-side change is recommended.
 | `aws.secrets_manager_rotation` | KSI-SVC-ASM | Automated secret rotation matches the KSI. |
 | `aws.security_group_open_ingress` | KSI-CNA-RNT | Ingress restriction is the KSI outcome. |
 | `aws.suspicious_activity_response` | KSI-IAM-SUS | Automated EventBridge→Lambda IS the KSI outcome. |
-| `aws.terraform_inventory` | KSI-PIY-GIV | Authoritative-source automatic inventory. |
+| `aws.terraform_inventory` | KSI-PIY-GIV | Authoritative-source automatic inventory.[²](#footnote-piy-giv) |
 | `aws.tls_on_lb_listeners` | KSI-SVC-SNT | Encrypted network traffic. |
 | `aws.vpc_logical_segmentation` | KSI-CNA-ULN | Logical networking primitives. |
 | `aws.ec2_imdsv2_required` | KSI-CNA-IBP | IMDSv2 IS an AWS best practice. |
@@ -254,6 +254,29 @@ strongly enough that no audit-side change is recommended.
 | `github.ci_validation_gates` | KSI-CMT-VTD | CI validation IS the KSI outcome. |
 | `github.immutable_deploy_patterns` | KSI-CMT-RMV | Immutable deploys for change management. |
 | `github.supply_chain_monitoring` | KSI-SCR-MON | Dependabot / SCA tooling for supply-chain monitoring. |
+
+### Footnotes — direct fits with caveats worth noting in detector READMEs
+
+<a id="footnote-iam-aam"></a>**¹ `aws.iam_managed_via_terraform` → KSI-IAM-AAM:**
+direct fit on the *automation-of-lifecycle* axis (Terraform-managed
+IAM IS automated lifecycle). Caveat for the detector README: KSI-IAM-AAM's
+moderate statement asks for the *entire* account-management lifecycle
+including offboarding/cleanup. A `aws_iam_user "ex_employee"` resource
+still in `main.tf` is technically Terraform-managed but is the opposite
+of automated lifecycle. The detector can't tell. Worth a one-line
+"what it does NOT prove" note in
+`src/efterlev/detectors/aws/iam_managed_via_terraform/README.md`
+covering the stale-resource case; doesn't change the audit row.
+
+<a id="footnote-piy-giv"></a>**² `aws.terraform_inventory` → KSI-PIY-GIV:**
+direct fit *when Terraform is the sole provisioning path*. KSI-PIY-GIV's
+moderate statement asks for "real-time inventories of all information
+resources." If a customer has ClickOps-provisioned resources alongside
+Terraform-managed ones (an explicitly-acknowledged ICP-A pattern per
+`docs/icp.md`), the detector covers the Terraform slice only — partial,
+not direct. Worth either (a) a one-line caveat in the detector README,
+or (b) moving this row to the partial cluster with the same note.
+Either way, the underlying mapping stays.
 
 ---
 
