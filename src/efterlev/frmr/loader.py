@@ -30,6 +30,15 @@ class FrmrDocument(BaseModel):
     version: str
     last_updated: str
     themes: dict[str, Theme]
+    # Indicators carry per-level statements resolved at load time using the
+    # `level` parameter passed to `load_frmr` (default "moderate"). The
+    # resolved statement is the level-specific text from
+    # `varies_by_level.{level}.statement` if present, otherwise the legacy
+    # top-level `statement`. This means an FrmrDocument is **baseline-
+    # coupled**: a workspace initialized for `fedramp-20x-moderate` carries
+    # moderate-level statements; if v0.2 ever supports concurrent baselines
+    # in one process (e.g., low + moderate side-by-side), separate
+    # FrmrDocuments must be loaded — the cache cannot be shared.
     indicators: dict[str, Indicator]
 
 
