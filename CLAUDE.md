@@ -18,9 +18,11 @@ License: Apache 2.0. No commercial tier, no managed SaaS, no paid layer. Pure OS
 
 ## Current state
 
-**v0.1.0 shipped 2026-04-29.** Public on GitHub at `efterlev/efterlev`, on PyPI as `efterlev`, on `ghcr.io/efterlev/efterlev` (multi-arch, cosign-signed).
+**v0.1.2 is current** (shipped 2026-04-30). Public on GitHub at `efterlev/efterlev`, on PyPI as `efterlev`, on `ghcr.io/efterlev/efterlev` (multi-arch, cosign-signed).
 
-**Coverage at v0.1.0:**
+The v0.1.x patch arc closed three real-CI bugs surfaced by the deep-dive shakedown against the canonical dogfood target (govnotes-demo): max_tokens truncation in the Gap Agent (v0.1.1 raised the cap); the bumped cap then tripped Anthropic's streaming-required threshold (v0.1.2 reduced to 20480); `__version__` drift between `__init__.py` and `pyproject.toml` (v0.1.1 switched to hatch dynamic versioning); `report run` init-detection looking at the workspace dir instead of the FRMR cache (v0.1.2). See `CHANGELOG.md` for the per-release record.
+
+**Coverage at v0.1.2:**
 - 45 detectors total (38 KSI-mapped + 7 supplementary 800-53-only)
 - 31 of 60 thematic KSIs covered, across 8 of 11 themes (CNA, CMT, IAM, MLA, PIY, RPL, SCR, SVC)
 - 3 agents: Gap (Opus 4.7), Documentation (Sonnet 4.6), Remediation (Opus 4.7)
@@ -29,11 +31,31 @@ License: Apache 2.0. No commercial tier, no managed SaaS, no paid layer. Pure OS
 
 **Authoritative sources for "what's in":**
 - `CHANGELOG.md` — release-by-release record. Don't restate it here.
-- `git log` — commit-level history, including the 51-PR launch arc (#36 → #96)
+- `git log` — commit-level history
 - `DECISIONS.md` — append-only architectural decision log; every non-trivial choice is here
 - `docs/followups.md` — tracker for v0.1.x and v0.2.0+ deferred work
 
-**What's deferred** (not in v0.1.0): OSCAL-shaped SSP/AR/POA&M JSON generators (v1.5+, gated on customer pull); non-Terraform input sources (CloudFormation, CDK, Pulumi, Kubernetes — v1.5+); CMMC 2.0 overlay (v1.5+); runtime cloud API scanning (different threat model — v1.5+).
+**Canonical dogfood target:** `lhassa8/govnotes-demo`. 24 documented "deliberate gaps" spanning 16 KSIs across 8 themes, plus 3 Evidence Manifests for procedural AFR/CED/INR theme KSIs. Synthetic FedRAMP boundary built specifically for compliance-scanning evaluation. Re-running the full pipeline against it costs ~$2.60 in Anthropic API and is the reference test for any non-trivial Efterlev change. The repo's own `efterlev-scan.yml` workflow runs the full pipeline on every push touching infra/workflows/manifests.
+
+**What's deferred** (not in v0.1.x): OSCAL-shaped SSP/AR/POA&M JSON generators (v1.5+, gated on customer pull); non-Terraform input sources (CloudFormation, CDK, Pulumi, Kubernetes — v1.5+); CMMC 2.0 overlay (v1.5+); runtime cloud API scanning (different threat model — v1.5+); streaming refactor of the Anthropic client (v0.2.0, the right fix for output-budget growth past ~24K tokens).
+
+---
+
+## Known gotchas (v0.1.x lessons)
+
+These have all surfaced in real CI, so they're not theoretical:
+
+- **Anthropic non-streaming threshold.** `client.messages.create()` rejects requests whose `max_tokens` could plausibly take >10 minutes ("Streaming is required for operations that may take longer than 10 minutes"). Empirically, `max_tokens > ~24000` for Opus 4.7 trips this on real workloads. v0.1.2 holds the Gap Agent at 20480 — enough headroom over the v0.1.0 truncation site (~16384 was too small for a full-baseline classification with substantive rationales). Pushing the cap past ~24K means switching to `client.messages.stream()`. Don't bump the cap blindly.
+
+- **`.efterlev/manifests/` committed; everything else gitignored.** This is the canonical Evidence-Manifest pattern. A fresh clone has the workspace dir present (because manifests are checked in) but the FRMR cache, provenance store, etc. missing. `report run` and `init` both check for the FRMR cache file (`.efterlev/cache/frmr_document.json`), not just the dir, to distinguish "fully initialized" from "half-initialized." If you change the init-detection logic, preserve this distinction.
+
+- **`__version__` lives in `src/efterlev/__init__.py` only.** `pyproject.toml` reads it via `[tool.hatch.version] path = "src/efterlev/__init__.py"`. There's a CI-time regression test (`test_in_source_version_matches_package_metadata`) that asserts `efterlev.__version__ == importlib.metadata.version("efterlev")`. Bumping the version means editing `__init__.py` only and rebuilding (uv sync handles this on dev; hatch handles it on the wheel build).
+
+- **`# nosemgrep:` annotations need the full registry-resolved rule_id, not the short name.** Bare `# nosemgrep` (suppress all on the line) works; `# nosemgrep: dangerous-subprocess-use-audit` does NOT, because semgrep matches against `python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit` (the full path from the registry pack). Caused every push-event ci-security run on main to fail silently from v0.1.0 launch through v0.1.1.
+
+- **`python-hcl2` doesn't resolve `${...}` interpolations.** Detectors matching string literals (e.g., `policy_arn == "arn:aws:iam::aws:policy/AdministratorAccess"`) miss when the source uses `arn:${local.partition}:iam::aws:...`. For test targets, hardcode `arn:aws:`. For real-world detection robustness, use plan-JSON mode (`efterlev scan --plan plan.json`) which gives Terraform-resolved values.
+
+- **GitHub-source detectors fire only when the scan target sees `.github/workflows/`.** `efterlev scan --target infra/terraform/` skips them. For mixed-content repos, scan from repo root (`--target .`) — `.tf` files are still found via rglob.
 
 ---
 
